@@ -18,6 +18,4 @@ COPY conf/.inputrc /root
 RUN mkdir /root/.vim
 COPY conf/.vim /root/.vim
 COPY conf/.vimrc /root
-COPY conf/id_rsa /root/.ssh/
-COPY conf/id_rsa.pub /root/.ssh/
 WORKDIR /home/cs492/projects/cs492-projects
