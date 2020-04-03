@@ -79,7 +79,7 @@ def video_object_detection(in_video_path: str,
 		acc_cnt += 1
 
 		print(
-		    "#{}: done in {} seconds\ttotal:{} seconds\tthroughput: {} frames per second"
+				"#{}: done in {} seconds\ttotal:{} seconds\tthroughput: {:.3f} frames per second"
 		    .format(acc_cnt, inference_time, acc_time, acc_cnt / acc_time))
 
 		for tensor in batched_tensors:
