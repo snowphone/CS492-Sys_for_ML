@@ -11,21 +11,27 @@ def open_video_with_opencv(
 
 	reader = cv2.VideoCapture(in_video_path)
 	if not reader.isOpened():
-		raise Exception("Failed to open '{}'".format(in_video_path))
+		raise Exception("Failed to open \'{}\'".format(in_video_path))
 
-	writer = cv2.VideoWriter(out_video_path)
+	fps = reader.get(cv2.CAP_PROP_FPS)
+	fourcc = cv2.VideoWriter_fourcc(*"MJPG")
+	width = int(reader.get(cv2.CAP_PROP_FRAME_WIDTH))
+	height = int(reader.get(cv2.CAP_PROP_FRAME_HEIGHT))
+
+	writer = cv2.VideoWriter(out_video_path, fourcc, fps, (width, height))
 	if not writer.isOpened():
 		raise Exception(
-		    "Failed to create video named '{}'".format(out_video_path))
+		    "Failed to create video named \'{}\'".format(out_video_path))
 
 	return reader, writer
 
 
 def resize_input(im: np.ndarray) -> np.ndarray:
-	imsz = im.resize(im, (416, 416))
+	imsz = cv2.resize(im, (416, 416), interpolation=cv2.INTER_AREA)
 	imsz = imsz / 255.
 	imsz = imsz[:, :, ::-1]
-	return np.asarray(imsz, dtype=np.float32)
+	imsz = np.asarray(imsz, dtype=np.float32)
+	return imsz.reshape((1, *imsz.shape))
 
 
 def draw(image: np.ndarray, proposals: list) -> np.ndarray:
@@ -51,7 +57,7 @@ def video_object_detection(in_video_path: str,
                            proc="cpu"):
 	"""
 	Read a videofile, scan each frame and draw objects using pretrained yolo_v2_tiny model.
-	Finally, store drawed frames into `out_video_path`
+	Finally, store drawed frames into 'out_video_path'
 	"""
 	reader, writer = open_video_with_opencv(in_video_path, out_video_path)
 	yolo = yolov2tiny.YOLO_V2_TINY((416, 416, 3), "./y2t_weights.pickle", proc)
