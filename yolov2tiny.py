@@ -17,7 +17,7 @@ class YOLO_V2_TINY(object):
 		self.sess = tf.compat.v1.Session(config=config, graph=self.g)
 		self.proc = proc
 		self.weight_pickle = weight_pickle
-		self.batchSize = 16
+		self.batchSize = 1
 		self.input_tensor, self.tensor_list = self.build_graph(in_shape)
 
 	def build_graph(self, in_shape):
