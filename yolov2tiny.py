@@ -4,6 +4,10 @@ import pickle
 import numpy as np
 import tensorflow as tf
 
+n_classes = 20
+n_b_boxes = 5
+n_b_box_coord = 4
+
 class YOLO_V2_TINY(object):
 
 	def __init__(self, in_shape, weight_pickle, proc="cpu"):
@@ -13,6 +17,7 @@ class YOLO_V2_TINY(object):
 		self.sess = tf.compat.v1.Session(config=config, graph=self.g)
 		self.proc = proc
 		self.weight_pickle = weight_pickle
+		self.batchSize = 16
 		self.input_tensor, self.tensor_list = self.build_graph(in_shape)
 
 	def build_graph(self, in_shape):
@@ -22,14 +27,42 @@ class YOLO_V2_TINY(object):
 		#
 		# Your code from here. You may clear the comments.
 		#
-		print('build_graph is not yet implemented')
-		sys.exit()
 
 		# Load weight parameters from a pickle file.
 
+		with open(self.weight_pickle, "rb") as f:
+			weight = pickle.load(f, encoding="latin1")
 
 		# Create an empty list for tensors.
 		tensor_list = []
+		input_tensor = tf.compat.v1.placeholder(tf.float32, (self.batchSize, *in_shape), name="input")
+		tensor_list.append(input_tensor)
+
+		with self.g.as_default():
+			with self.g.device(self.proc):
+				filterSize = 16
+				for i in range(6):
+					out_tensor = conv(tensor_list[-1], filterSize)
+					filterSize *= 2
+					out_tensor = batch_norm(out_tensor)
+					out_tensor = leakyRelu(out_tensor)
+					stride = [2, 2] if i != 5 else [1, 1]
+					out_tensor = maxpool(out_tensor, stride)
+					tensor_list.append(out_tensor)
+
+				for i in range(2):
+					out_tensor = conv(tensor_list[-1], filterSize)
+					filterSize //= 2
+					out_tensor = batch_norm(out_tensor)
+					out_tensor = leakyRelu(out_tensor)
+					tensor_list.append(out_tensor)
+
+
+			filterSize = n_b_boxes * (n_b_box_coord + 1 + n_classes)
+
+			out_tensor = conv(tensor_list[-1], filterSize)
+			tensor_list.append(out_tensor)
+
 
 		# Use self.g as a default graph. Refer to this API.
 		## https://www.tensorflow.org/api_docs/python/tf/Graph#as_default
@@ -62,10 +95,7 @@ class YOLO_V2_TINY(object):
 
 def postprocessing(predictions):
 
-	n_classes = 20
 	n_grid_cells = 13
-	n_b_boxes = 5
-	n_b_box_coord = 4
   
 	# Names and colors for each class
 	classes = ["aeroplane", "bicycle", "bird", "boat", "bottle", "bus", "car", "cat", "chair", "cow", "diningtable", "dog", "horse", "motorbike", "person", "pottedplant", "sheep", "sofa", "train", "tvmonitor"]
@@ -202,4 +232,19 @@ def softmax(x):
 	e_x = np.exp(x - np.max(x))
 	return e_x / e_x.sum(axis = 0)
 
+def conv(in_tensor, out_chan):
+	with tf.variable_scope("Conv2d"):
+		return tf.contrib.slim.conv2d(in_tensor, out_chan, kernel_size=[3,3], padding="SAME")
 
+def batch_norm(in_tensor):
+	return tf.contrib.layers.batch_norm(in_tensor, epsilon=1e-5)
+
+def leakyRelu(x):
+	return tf.maximum(x, 0.1 * x)
+
+def maxpool(x, stride=[2, 2]):
+	return tf.contrib.slim.max_pool2d(x, kernel_size=[2, 2], stride=stride, padding="SAME")
+
+
+if __name__ == "__main__":
+	YOLO_V2_TINY((416, 416, 3), None)
