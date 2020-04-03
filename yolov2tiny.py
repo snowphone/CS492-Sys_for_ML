@@ -42,19 +42,15 @@ class YOLO_V2_TINY(object):
 			with self.g.device(self.proc):
 				filterSize = 16
 				for i in range(6):
-					out_tensor = conv(tensor_list[-1], filterSize)
+					out_tensor = conv_batNorm_lRelu(tensor_list[-1], filterSize)
 					filterSize *= 2
-					out_tensor = batch_norm(out_tensor)
-					out_tensor = leakyRelu(out_tensor)
 					stride = [2, 2] if i != 5 else [1, 1]
 					out_tensor = maxpool(out_tensor, stride)
 					tensor_list.append(out_tensor)
 
 				for i in range(2):
-					out_tensor = conv(tensor_list[-1], filterSize)
+					out_tensor = conv_batNorm_lRelu(tensor_list[-1], filterSize)
 					filterSize //= 2
-					out_tensor = batch_norm(out_tensor)
-					out_tensor = leakyRelu(out_tensor)
 					tensor_list.append(out_tensor)
 
 
@@ -62,7 +58,8 @@ class YOLO_V2_TINY(object):
 
 			out_tensor = conv(tensor_list[-1], filterSize)
 			tensor_list.append(out_tensor)
-
+			
+			print(*tensor_list, sep='\n')
 
 		# Use self.g as a default graph. Refer to this API.
 		## https://www.tensorflow.org/api_docs/python/tf/Graph#as_default
@@ -232,6 +229,11 @@ def softmax(x):
 	e_x = np.exp(x - np.max(x))
 	return e_x / e_x.sum(axis = 0)
 
+def conv_batNorm_lRelu(in_tensor, out_chan):
+	with tf.variable_scope("Conv2d_batNorm_lRelu"):
+		return leakyRelu(batch_norm(conv(in_tensor, out_chan)))
+
+
 def conv(in_tensor, out_chan):
 	with tf.variable_scope("Conv2d"):
 		return tf.contrib.slim.conv2d(in_tensor, out_chan, kernel_size=[3,3], padding="SAME")
@@ -247,4 +249,4 @@ def maxpool(x, stride=[2, 2]):
 
 
 if __name__ == "__main__":
-	YOLO_V2_TINY((416, 416, 3), None)
+	YOLO_V2_TINY((416, 416, 3), "./y2t_weights.pickle")
