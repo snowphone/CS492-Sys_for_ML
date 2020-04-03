@@ -3,6 +3,7 @@ import sys
 import pickle
 import numpy as np
 import tensorflow as tf
+from debug import trace
 
 n_classes = 20
 n_b_boxes = 5
@@ -68,6 +69,7 @@ class YOLO_V2_TINY(object):
 		# Return the start tensor and the list of all tensors.
 		return x, l9
 
+	@trace
 	def inference(self, img):
 		#with self.g.as_default():
 		feed_dict = {self.input_tensor: img}
@@ -84,6 +86,7 @@ class YOLO_V2_TINY(object):
 #
 
 
+@trace
 def postprocessing(predictions):
 
 	n_grid_cells = 13
@@ -204,6 +207,7 @@ def iou(boxA, boxB):
 	return iou
 
 
+@trace
 def non_maximal_suppression(thresholded_predictions, iou_threshold):
 
 	nms_predictions = []

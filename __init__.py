@@ -3,6 +3,7 @@ import numpy as np
 import cv2
 import datetime
 import yolov2tiny
+from debug import trace
 
 
 def open_video_with_opencv(
@@ -34,6 +35,7 @@ def resize_input(im: np.ndarray) -> np.ndarray:
 	return imsz.reshape((1, *imsz.shape))
 
 
+@trace
 def draw(image: np.ndarray, proposals: list) -> np.ndarray:
 	'''
 	Draw bounding boxes into image and return it
@@ -52,6 +54,7 @@ def draw(image: np.ndarray, proposals: list) -> np.ndarray:
 	return image
 
 
+@trace
 def video_object_detection(in_video_path: str,
                            out_video_path: str,
                            proc="cpu"):
@@ -79,7 +82,7 @@ def video_object_detection(in_video_path: str,
 		acc_cnt += 1
 
 		print(
-				"#{}: done in {} seconds\ttotal:{} seconds\tthroughput: {:.3f} frames per second"
+				"#{}: done in {:.3f} seconds\ttotal:{:.3f} seconds\tthroughput: {:.3f} frames per second"
 		    .format(acc_cnt, inference_time, acc_time, acc_cnt / acc_time))
 
 		for tensor in batched_tensors:
