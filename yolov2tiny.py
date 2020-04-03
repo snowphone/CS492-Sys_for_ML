@@ -31,36 +31,32 @@ class YOLO_V2_TINY(object):
 		# Load weight parameters from a pickle file.
 
 		with open(self.weight_pickle, "rb") as f:
-			weight = pickle.load(f, encoding="latin1")
+			weights = pickle.load(f, encoding="latin1")
 
-		# Create an empty list for tensors.
-		tensor_list = []
-		input_tensor = tf.compat.v1.placeholder(tf.float32, (self.batchSize, *in_shape), name="input")
-		tensor_list.append(input_tensor)
+
+		outFilterSize = n_b_boxes * (n_b_box_coord + 1 + n_classes)
+
 
 		with self.g.as_default():
 			with self.g.device(self.proc):
-				filterSize = 16
-				for i in range(6):
-					out_tensor = conv_batNorm_lRelu(tensor_list[-1], filterSize)
-					filterSize *= 2
-					stride = [2, 2] if i != 5 else [1, 1]
-					out_tensor = maxpool(out_tensor, stride)
-					tensor_list.append(out_tensor)
+				x = tf.compat.v1.placeholder(tf.float32, (self.batchSize, *in_shape), name="input")
+				l1 = maxpool(conv_batNorm_lRelu(x, 16 ** 1, weights[0]), [2, 2])
+				l2 = maxpool(conv_batNorm_lRelu(l1, 16 ** 2, weights[1]), [2, 2])
+				l3 = maxpool(conv_batNorm_lRelu(l2, 16 ** 3, weights[2]), [2, 2])
+				l4 = maxpool(conv_batNorm_lRelu(l3, 16 ** 4, weights[3]), [2, 2])
+				l5 = maxpool(conv_batNorm_lRelu(l4, 16 ** 5, weights[4]), [2, 2])
+				l6 = maxpool(conv_batNorm_lRelu(l5, 16 ** 6, weights[5]), [1, 1])
+				l7 = conv_batNorm_lRelu(l6, 16 ** 6, weights[6])
+				l8 = conv_batNorm_lRelu(l7, 16 ** 5, weights[7])
+				l9 = conv(l8, outFilterSize, weights[-1])
 
-				for i in range(2):
-					out_tensor = conv_batNorm_lRelu(tensor_list[-1], filterSize)
-					filterSize //= 2
-					tensor_list.append(out_tensor)
+		with self.g.as_default():
+			with self.g.device(self.proc):
+				tf.initialize_all_variables().run(session=self.sess)
 
+		tensor_list = [x, l1, l2, l3, l4, l5, l6, l7, l8, l9]
 
-			filterSize = n_b_boxes * (n_b_box_coord + 1 + n_classes)
-
-			out_tensor = conv(tensor_list[-1], filterSize)
-			tensor_list.append(out_tensor)
 			
-			print(*tensor_list, sep='\n')
-
 		# Use self.g as a default graph. Refer to this API.
 		## https://www.tensorflow.org/api_docs/python/tf/Graph#as_default
 		# Then you need to declare which device to use for tensor computation. The device info
@@ -73,10 +69,12 @@ class YOLO_V2_TINY(object):
 		# (Use 1e-5 for the epsilon value of batch normalization layers.)
 
 
+
 		# Return the start tensor and the list of all tensors.
-		return input_tensor, tensor_list
+		return x, tensor_list
 
 	def inference(self, img):
+		#with self.g.as_default():
 		feed_dict = { self.input_tensor: img }
 		out_tensors = self.sess.run(self.tensor_list, feed_dict)
 		return out_tensors
@@ -155,7 +153,7 @@ def postprocessing(predictions):
   
 	# Non maximal suppression
 	if (len(thresholded_predictions) > 0):
-		nms_predictions = self.non_maximal_suppression(thresholded_predictions, 0.3)
+		nms_predictions = non_maximal_suppression(thresholded_predictions, 0.3)
 	else:
 		nms_predictions = []
 	
@@ -210,7 +208,7 @@ def non_maximal_suppression(thresholded_predictions, iou_threshold):
 
 	j = 0
 	while j < n_boxes_to_check:
-		curr_iou = self.iou(thresholded_predictions[i][0],nms_predictions[j][0])
+		curr_iou = iou(thresholded_predictions[i][0],nms_predictions[j][0])
 		if(curr_iou > iou_threshold ):
 			to_delete = True
 		#print('Checking box {} vs {}: IOU = {} , To delete = {}'.format(thresholded_predictions[i][0],nms_predictions[j][0],curr_iou,to_delete))
@@ -229,14 +227,15 @@ def softmax(x):
 	e_x = np.exp(x - np.max(x))
 	return e_x / e_x.sum(axis = 0)
 
-def conv_batNorm_lRelu(in_tensor, out_chan):
-	with tf.variable_scope("Conv2d_batNorm_lRelu"):
-		return leakyRelu(batch_norm(conv(in_tensor, out_chan)))
+def conv_batNorm_lRelu(in_tensor, out_chan, weight=None):
+	return leakyRelu(batch_norm(conv(in_tensor, out_chan, weight)))
 
 
-def conv(in_tensor, out_chan):
-	with tf.variable_scope("Conv2d"):
-		return tf.contrib.slim.conv2d(in_tensor, out_chan, kernel_size=[3,3], padding="SAME")
+def conv(in_tensor, out_chan, weight=None):
+	layer = tf.contrib.slim.conv2d(in_tensor, out_chan, kernel_size=[3,3], padding="SAME")
+	#if weight is not None:
+	#	layer.__dict__.update(weight)
+	return layer
 
 def batch_norm(in_tensor):
 	return tf.contrib.layers.batch_norm(in_tensor, epsilon=1e-5)
