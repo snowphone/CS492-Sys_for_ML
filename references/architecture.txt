@@ -1,0 +1,54 @@
+Type: <class 'list'>
+Length: 9
+Element type: <class 'collections.OrderedDict'>
+conv0
+	conv0[kernel]: (3, 3, 3, 16)
+	conv0[biases]: (16,)
+	conv0[moving_variance]: (16,)
+	conv0[gamma]: (16,)
+	conv0[moving_mean]: (16,)
+conv1
+	conv1[kernel]: (3, 3, 16, 32)
+	conv1[biases]: (32,)
+	conv1[moving_variance]: (32,)
+	conv1[gamma]: (32,)
+	conv1[moving_mean]: (32,)
+conv2
+	conv2[kernel]: (3, 3, 32, 64)
+	conv2[biases]: (64,)
+	conv2[moving_variance]: (64,)
+	conv2[gamma]: (64,)
+	conv2[moving_mean]: (64,)
+conv3
+	conv3[kernel]: (3, 3, 64, 128)
+	conv3[biases]: (128,)
+	conv3[moving_variance]: (128,)
+	conv3[gamma]: (128,)
+	conv3[moving_mean]: (128,)
+conv4
+	conv4[kernel]: (3, 3, 128, 256)
+	conv4[biases]: (256,)
+	conv4[moving_variance]: (256,)
+	conv4[gamma]: (256,)
+	conv4[moving_mean]: (256,)
+conv5
+	conv5[kernel]: (3, 3, 256, 512)
+	conv5[biases]: (512,)
+	conv5[moving_variance]: (512,)
+	conv5[gamma]: (512,)
+	conv5[moving_mean]: (512,)
+conv6
+	conv6[kernel]: (3, 3, 512, 1024)
+	conv6[biases]: (1024,)
+	conv6[moving_variance]: (1024,)
+	conv6[gamma]: (1024,)
+	conv6[moving_mean]: (1024,)
+conv7
+	conv7[kernel]: (3, 3, 1024, 1024)
+	conv7[biases]: (1024,)
+	conv7[moving_variance]: (1024,)
+	conv7[gamma]: (1024,)
+	conv7[moving_mean]: (1024,)
+conv8
+	conv8[kernel]: (1, 1, 1024, 125)
+	conv8[biases]: (125,)
