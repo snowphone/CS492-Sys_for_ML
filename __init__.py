@@ -1,4 +1,5 @@
 import sys
+import os
 import numpy as np
 import cv2
 import datetime
@@ -82,6 +83,12 @@ def draw(image: np.ndarray, proposals: List[proposal_t]) -> np.ndarray:
 	return image
 
 
+def store_tensors(tensors: List[np.ndarray]) -> None:
+	os.makedirs("intermediate", exist_ok=True)
+	for i, tensor in enumerate(tensors):
+		path = os.path.join("intermediate", "layer_{}.npy".format(i))
+		np.save(path, tensor)
+
 @trace
 def video_object_detection(in_video_path: str,
                            out_video_path: str,
@@ -96,7 +103,7 @@ def video_object_detection(in_video_path: str,
 	width = int(reader.get(cv2.CAP_PROP_FRAME_WIDTH))
 	height = int(reader.get(cv2.CAP_PROP_FRAME_HEIGHT))
 
-	acc_time, acc_cnt = 0, 0
+	acc_time, acc_cnt, firstTime = 0, 0, True
 	while reader.isOpened():
 		okay, image = reader.read()
 		if not okay:
@@ -105,7 +112,13 @@ def video_object_detection(in_video_path: str,
 
 		image = resize_input(image)
 		beg = datetime.datetime.now()
-		batched_tensors = yolo.inference(image)
+		batched_tensors_list = yolo.inference(image)
+		if firstTime:
+			store_tensors(batched_tensors_list)
+			firstTime = False
+
+		batched_tensors = batched_tensors_list[-1]
+
 		DEBUG(f"batched tensor: {batched_tensors.shape}")
 		end = datetime.datetime.now()
 		inference_time = (end - beg).total_seconds()
