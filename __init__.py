@@ -18,7 +18,7 @@ def open_video_with_opencv(
 		raise Exception("Failed to open \'{}\'".format(in_video_path))
 
 	fps = reader.get(cv2.CAP_PROP_FPS)
-	fourcc = cv2.VideoWriter_fourcc(*"MJPG")
+	fourcc = cv2.VideoWriter_fourcc(*"mp4v")
 	width = int(reader.get(cv2.CAP_PROP_FRAME_WIDTH))
 	height = int(reader.get(cv2.CAP_PROP_FRAME_HEIGHT))
 
