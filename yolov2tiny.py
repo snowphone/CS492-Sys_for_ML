@@ -13,13 +13,13 @@ n_b_box_coord = 4
 class YOLO_V2_TINY(object):
 	def __init__(self, in_shape, weight_pickle, proc="cpu"):
 		self.g = tf.Graph()
-		config = tf.compat.v1.ConfigProto()
+		config = tf.ConfigProto()
 		config.gpu_options.allow_growth = True
-		self.sess = tf.compat.v1.Session(config=config, graph=self.g)
+		self.sess = tf.Session(config=config, graph=self.g)
 		self.proc = proc
 		self.weight_pickle = weight_pickle
 		self.batchSize = 1
-		self.input_tensor, self.model = self.build_graph(in_shape)
+		self.input_tensor, self.layers = self.build_graph(in_shape)
 
 	def build_graph(self, in_shape):
 		#
@@ -36,20 +36,38 @@ class YOLO_V2_TINY(object):
 
 		outFilterSize = n_b_boxes * (n_b_box_coord + 1 + n_classes)
 
+		layers = []
+
+		def conv_bias(in_tensor, out_chan, weight=None):
+			l1 = conv(in_tensor, out_chan, weight)
+			bias = None	# TODO: add bias layer!
+				# TODO: It needs explicit bias layers 😥
+			l2 = tf.add(in_tensor, bias)
+			layers.extend([l1, l2])
+			return l2
+
+		def conv_batNorm_lRelu(in_tensor, out_chan, weight=None):
+			l1 = conv_bias(in_tensor, out_chan, weight)
+			l2 = batch_norm(l1)
+			l3 = leakyRelu(l2)
+			layers.extend([l2, l3])
+			return l3
+
 		with self.g.as_default():
 			with self.g.device(self.proc):
-				x = tf.compat.v1.placeholder(tf.float32,
+				x = tf.placeholder(tf.float32,
 				                             (self.batchSize, *in_shape),
 				                             name="input")
-				l1 = maxpool(conv_batNorm_lRelu(x, 16, weights[0]), [2, 2])
-				l2 = maxpool(conv_batNorm_lRelu(l1, 32, weights[1]), [2, 2])
-				l3 = maxpool(conv_batNorm_lRelu(l2, 64, weights[2]), [2, 2])
-				l4 = maxpool(conv_batNorm_lRelu(l3, 128, weights[3]), [2, 2])
-				l5 = maxpool(conv_batNorm_lRelu(l4, 256, weights[4]), [2, 2])
-				l6 = maxpool(conv_batNorm_lRelu(l5, 512, weights[5]), [1, 1])
+				l1 = maxpool(conv_batNorm_lRelu(x, 16, weights[0]), [2, 2]);	layers.append(l1)
+				l2 = maxpool(conv_batNorm_lRelu(l1, 32, weights[1]), [2, 2]);	layers.append(l2)
+				l3 = maxpool(conv_batNorm_lRelu(l2, 64, weights[2]), [2, 2]);	layers.append(l3)
+				l4 = maxpool(conv_batNorm_lRelu(l3, 128, weights[3]), [2, 2]);	layers.append(l4)
+				l5 = maxpool(conv_batNorm_lRelu(l4, 256, weights[4]), [2, 2]);	layers.append(l5)
+				l6 = maxpool(conv_batNorm_lRelu(l5, 512, weights[5]), [1, 1]);	layers.append(l6)
 				l7 = conv_batNorm_lRelu(l6, 1024, weights[6])
 				l8 = conv_batNorm_lRelu(l7, 1024, weights[7])
-				l9 = conv(l8, outFilterSize, weights[-1])
+				l9 = conv(l8, outFilterSize, weights[-1]);						layers.append(l9)
+
 
 		with self.g.as_default():
 			with self.g.device(self.proc):
@@ -67,13 +85,13 @@ class YOLO_V2_TINY(object):
 		# (Use 1e-5 for the epsilon value of batch normalization layers.)
 
 		# Return the start tensor and the list of all tensors.
-		return x, l9
+		return x, layers
 
 	@trace
 	def inference(self, img):
 		#with self.g.as_default():
 		feed_dict = {self.input_tensor: img}
-		out_tensors = self.sess.run(self.model, feed_dict)
+		out_tensors = self.sess.run(self.layers, feed_dict)
 		return out_tensors
 
 
@@ -247,17 +265,13 @@ def softmax(x):
 	return e_x / e_x.sum(axis=0)
 
 
-def conv_batNorm_lRelu(in_tensor, out_chan, weight=None):
-	return leakyRelu(batch_norm(conv(in_tensor, out_chan, weight)))
-
-
 def conv(in_tensor, out_chan, weight=None):
 	layer = tf.contrib.slim.conv2d(in_tensor,
 	                               out_chan,
 	                               kernel_size=[3, 3],
 	                               padding="SAME")
-	#if weight is not None:
-	#	layer.__dict__.update(weight)
+	if weight is not None:
+		layer.__dict__.update(weight)
 	return layer
 
 
