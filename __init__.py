@@ -3,8 +3,10 @@ import numpy as np
 import cv2
 import datetime
 import yolov2tiny
+from typing import List, Tuple
 from debug import trace
 
+DEBUG=print		# trace debug information
 
 def open_video_with_opencv(
         in_video_path: str,
@@ -34,14 +36,40 @@ def resize_input(im: np.ndarray) -> np.ndarray:
 	imsz = np.asarray(imsz, dtype=np.float32)
 	return imsz.reshape((1, *imsz.shape))
 
+color_t = Tuple[float, float, float]
+coord_t = Tuple[int, int]
+proposal_t = Tuple[str, coord_t, coord_t, color_t]
+def restore_shape(proposals: List[proposal_t], restore_width: int, restore_height: int) -> List[proposal_t]:
+	"""
+	Read proposal list and reshape proposal coordinates into original video's resolution
+	"""
+	def reshape(record: proposal_t)  -> proposal_t:
+		"""
+		Get a record and reshape coordinates into original ratio.
+		cf) lu means left upper and rb means right bottom.
+		"""
+		name, (lux, luy), (rbx, rby), color = record
+		DEBUG(lux, luy, rbx, rby, end='\t')
+		lux, rbx = map(lambda x: int(x / 416 * restore_width), [lux, rbx])
+		luy, rby = map(lambda y: int(y / 416 * restore_height), [luy, rby])
+		DEBUG("->", lux, luy, rbx, rby)
+		return (name, (lux, luy), (rbx, rby), color)
+
+	return [reshape(it) for it in proposals]
 
 @trace
-def draw(image: np.ndarray, proposals: list) -> np.ndarray:
+def draw(image: np.ndarray, proposals: List[proposal_t]) -> np.ndarray:
 	'''
 	Draw bounding boxes into image and return it
 
 	proposals contains a list of (best_class_name, lefttop, rightbottom, color).
 	'''
+	if len(image.shape) == 4:
+		image = image.reshape(*image.shape[1:])
+
+	DEBUG("image: {}".format(image.shape))
+	DEBUG(proposals[0])
+
 	for name, lefttop, rightbottom, color in proposals:
 		height, width, _channel = image.shape
 		lefttop = int(lefttop[0] * width), int(lefttop[1] * height)
@@ -65,6 +93,9 @@ def video_object_detection(in_video_path: str,
 	reader, writer = open_video_with_opencv(in_video_path, out_video_path)
 	yolo = yolov2tiny.YOLO_V2_TINY((416, 416, 3), "./y2t_weights.pickle", proc)
 
+	width = int(reader.get(cv2.CAP_PROP_FRAME_WIDTH))
+	height = int(reader.get(cv2.CAP_PROP_FRAME_HEIGHT))
+
 	acc_time, acc_cnt = 0, 0
 	while reader.isOpened():
 		okay, image = reader.read()
@@ -75,6 +106,7 @@ def video_object_detection(in_video_path: str,
 		image = resize_input(image)
 		beg = datetime.datetime.now()
 		batched_tensors = yolo.inference(image)
+		DEBUG(f"batched tensor: {batched_tensors.shape}")
 		end = datetime.datetime.now()
 		inference_time = (end - beg).total_seconds()
 
@@ -87,6 +119,7 @@ def video_object_detection(in_video_path: str,
 
 		for tensor in batched_tensors:
 			proposals = yolov2tiny.postprocessing(tensor)
+			proposals = restore_shape(proposals, width, height)
 			out_image = draw(image, proposals)
 			writer.write(out_image)
 
