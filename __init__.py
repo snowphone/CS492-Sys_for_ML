@@ -1,10 +1,26 @@
-import sys
 import os
-import numpy as np
-import cv2
-import datetime
-import yolov2tiny
+import sys
+from datetime import datetime
+from functools import reduce, wraps
 from typing import List, Tuple
+
+import cv2
+import numpy as np
+
+import yolov2tiny
+
+
+def measure(func):
+	""" Measure how long a function takes time """
+	@wraps(func)
+	def impl(*args, **kargs):
+		beg=datetime.now()
+		ret = func(*args, **kargs)
+		time = (datetime.now() - beg).total_seconds()
+		print("{}: {}s".format(func.__name__, time))
+		return ret
+
+	return impl
 
 
 def open_video_with_opencv(
@@ -83,6 +99,7 @@ def store_tensors(tensors: List[np.ndarray]):
 		np.save(path, tensor)
 
 
+@measure
 def video_object_detection(in_video_path: str,
                            out_video_path: str,
                            proc="cpu"):
@@ -96,40 +113,38 @@ def video_object_detection(in_video_path: str,
 	width = int(reader.get(cv2.CAP_PROP_FRAME_WIDTH))
 	height = int(reader.get(cv2.CAP_PROP_FRAME_HEIGHT))
 
-	time_acc, frames_acc, firstTime = 0, 0, True
+	acc, firstTime = [], True
 	while reader.isOpened():
 		okay, original_image = reader.read()
 		if not okay:
 			break
 
 		image = resize_input(original_image)
-		beg = datetime.datetime.now()
+		beg = datetime.now()
 		batched_tensors_list = yolo.inference(image)
-		end = datetime.datetime.now()
+		inference_time = (datetime.now() - beg).total_seconds()
+
 		if firstTime:
-			store_tensors(batched_tensors_list)
+			store_tensors(map(lambda x: x[0], batched_tensors_list))	# Remove batch shape
 			firstTime = False
 
-		batched_tensors = batched_tensors_list[-1]
+		tensor = batched_tensors_list[-1][0]
 
-		inference_time = (end - beg).total_seconds()
+		proposals = yolov2tiny.postprocessing(tensor)
+		proposals = restore_shape(proposals, width, height)
+		out_image = draw(original_image, proposals)
+		writer.write(out_image)
 
-		time_acc += inference_time
-		frames_acc += 1
-
-		print(
-		    "#{}: done in {:.3f} seconds\ttotal:{:.3f} seconds\tthroughput: {:.3f} frames per second"
-		    .format(frames_acc, inference_time, time_acc,
-		            frames_acc / time_acc))
-
-		for tensor in batched_tensors:
-			proposals = yolov2tiny.postprocessing(tensor)
-			proposals = restore_shape(proposals, width, height)
-			out_image = draw(original_image, proposals)
-			writer.write(out_image)
+		end_to_end_time = (datetime.now() - beg).total_seconds()
+		acc.append((inference_time, end_to_end_time))
+		print("#{} inference: {:.3f}\tend-to-end: {:.3f}".format(len(acc), inference_time, end_to_end_time))
 
 	reader.release()
 	writer.release()
+	inference_sum, end_to_end_sum = reduce(lambda x,y: (x[0] + y[0], x[1] + y[1]), acc)
+	size = len(acc)
+	print("Average inference: {:.3f}s\taverage end-to-end: {:.3f}s".format(inference_sum/size, end_to_end_sum/size))
+	print("Throughput: {:.3f}fps".format(size / end_to_end_sum))
 	return
 
 
@@ -153,4 +168,3 @@ def main():
 
 if __name__ == "__main__":
 	main()
-
