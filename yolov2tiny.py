@@ -1,12 +1,10 @@
 import os
 import pickle
 import sys
-from typing import DefaultDict, Dict, List, Mapping, MutableMapping
+from typing import List
 
 import numpy as np
 import tensorflow as tf
-
-from debug import trace
 
 n_classes = 20
 n_b_boxes = 5
@@ -27,117 +25,76 @@ class YOLO_V2_TINY(object):
 	def build_graph(self, in_shape):
 
 		# Auxiliary functions
-		def conv_b(in_tensor, out_chan, weight=None) -> List[tf.Tensor]:
+		def conv_b(in_tensor, out_chan, weights) -> List[tf.Tensor]:
 			"""
 			It's a composite function of conv |> bias.
 			returns a list of layers
 			"""
-			l1 = conv(in_tensor, out_chan, weight)
-			# TODO: It needs explicit bias layers 😥
-			#bias = tf.constant(0)	# TODO: add bias layer!
-			#l2 = tf.nn.bias_add(in_tensor, bias)
-			return [l1, l1]
+			l1 = conv(in_tensor, out_chan, weights["kernel"])
+			l2 = bias(l1, weights["biases"])
+			return [l1, l2]
 
-		def conv_b_batNorm_lRelu(in_tensor, out_chan, weight=None) -> List[tf.Tensor]:
+		def conv_b_batNorm_lRelu(in_tensor,
+		                         out_chan,
+		                         weights) -> List[tf.Tensor]:
 			"""
 			It's a composite function of conv |> bias |> batch normalization |> leakyRelu.
 			returns a list of layers
 			"""
-			l_list = conv_b(in_tensor, out_chan, weight)
-			l2 = batch_norm(l_list[-1])
+			l_list = conv_b(in_tensor, out_chan, weights)
+			l2 = batch_norm(l_list[-1], weights)
 			l3 = leakyRelu(l2)
 			return [*l_list, l2, l3]
 
-		def conv_b_batNorm_lRelu_maxpool(in_tensor, out_chan, weight=None, stride=[2, 2]) -> List[tf.Tensor]:
+		def conv_b_batNorm_lRelu_maxpool(in_tensor,
+		                                 out_chan,
+		                                 weights,
+		                                 pool_stride=[2,
+		                                              2]) -> List[tf.Tensor]:
 			"""
 			It's a composite function of conv |> bias |> batch normalization |> leakyRelu |> maxpool.
 			returns a list of layers
 			"""
-			l_list = conv_b_batNorm_lRelu(in_tensor, out_chan, weight)
-			l2 = maxpool(l_list[-1], stride)
+			l_list = conv_b_batNorm_lRelu(in_tensor, out_chan, weights)
+			l2 = maxpool(l_list[-1], pool_stride)
 			return [*l_list, l2]
 
-
 		# layers is a 2d array which contains a list of sublayers
+		# For example, layers looks like [[conv0, bias0, bat_norm0], [conv1, ...], ...]
 		layers = []
-		weights = [0 for _ in range(10)]
-		with self.g.as_default():
-			with self.g.device(self.proc):
-				x = tf.placeholder(tf.float32,
-				                             (self.batchSize, *in_shape),
-				                             name="input")
-				l1 = conv_b_batNorm_lRelu_maxpool(x, 16, weights[0], [2, 2]);	layers.append(l1)
-				l2 = conv_b_batNorm_lRelu_maxpool(l1[-1], 32, weights[1], [2, 2]);	layers.append(l2)
-				l3 = conv_b_batNorm_lRelu_maxpool(l2[-1], 64, weights[2], [2, 2]);	layers.append(l3)
-				l4 = conv_b_batNorm_lRelu_maxpool(l3[-1], 128, weights[3], [2, 2]);	layers.append(l4)
-				l5 = conv_b_batNorm_lRelu_maxpool(l4[-1], 256, weights[4], [2, 2]);	layers.append(l5)
-				l6 = conv_b_batNorm_lRelu_maxpool(l5[-1], 512, weights[5], [1, 1]);	layers.append(l6)
-				l7 = conv_b_batNorm_lRelu(l6[-1], 1024, weights[6]);				layers.append(l7)
-				l8 = conv_b_batNorm_lRelu(l7[-1], 1024, weights[7]);				layers.append(l8)
-				outFilterSize = n_b_boxes * (n_b_box_coord + 1 + n_classes)
-				l9 = conv_b(l8[-1], outFilterSize, weights[-1]);					layers.append(l9)
-
-
-		with self.g.as_default():
-			with self.g.device(self.proc):
-				self.sess.run(tf.global_variables_initializer())
-
 		with open(self.weight_pickle, "rb") as f:
-			weights_list = pickle.load(f, encoding="latin1")	# type: List[Dict[str, np.ndarray]]
+			weights_list = pickle.load(
+			    f, encoding="latin1")  # type: List[Dict[str, np.ndarray]]
 
-		# Restore weights
-		# Possible ideas:
-		#	https://github.com/ethereon/caffe-tensorflow/blob/master/kaffe/tensorflow/network.py
-		#	https://stackoverflow.com/questions/39555256/tensorflow-how-can-i-assign-numpy-pre-trained-weights-to-subsections-of-graph
-		#	https://tensorflowkorea.gitbooks.io/tensorflow-kr/content/g3doc/how_tos/variable_scope/
-		for weights, sublayers in zip(weights_list, layers):
+		with self.g.as_default(), self.g.device(self.proc):
+			x = tf.placeholder(tf.float32, (self.batchSize, *in_shape), name="input")
+			l1 = conv_b_batNorm_lRelu_maxpool(x, 16, weights_list[0], [2, 2]);			layers.append(l1)
+			l2 = conv_b_batNorm_lRelu_maxpool(l1[-1], 32, weights_list[1], [2, 2]);		layers.append(l2)
+			l3 = conv_b_batNorm_lRelu_maxpool(l2[-1], 64, weights_list[2], [2, 2]);		layers.append(l3)
+			l4 = conv_b_batNorm_lRelu_maxpool(l3[-1], 128, weights_list[3], [2, 2]);	layers.append(l4)
+			l5 = conv_b_batNorm_lRelu_maxpool(l4[-1], 256, weights_list[4], [2, 2]);	layers.append(l5)
+			l6 = conv_b_batNorm_lRelu_maxpool(l5[-1], 512, weights_list[5], [1, 1]);	layers.append(l6)
+			l7 = conv_b_batNorm_lRelu(l6[-1], 1024, weights_list[6]);					layers.append(l7)
+			l8 = conv_b_batNorm_lRelu(l7[-1], 1024, weights_list[7]);					layers.append(l8)
+			outFilterSize = n_b_boxes * (n_b_box_coord + 1 + n_classes)
+			l9 = conv_b(l8[-1], outFilterSize, weights_list[8]);						layers.append(l9)
 
-			weights: Dict[str, np.ndarray] = weights
-			sublayers: List[tf.Tensor] = sublayers
+		with self.g.as_default(), self.g.device(self.proc):
+			self.sess.run(tf.global_variables_initializer())
 
-			var = sublayers[0].eval(session=self.sess)
-			self.sess.run(var.assign(weights["kernel"]))
-			
-			continue
-
-
-		# Use self.g as a default graph. Refer to this API.
-		## https://www.tensorflow.org/api_docs/python/tf/Graph#as_default
-		# Then you need to declare which device to use for tensor computation. The device info
-		# is given from the command line argument and stored somewhere in this object.
-		# In this project, you may choose CPU or GPU. Consider using the following API.
-		## https://www.tensorflow.org/api_docs/python/tf/Graph#device
-		# Then you are ready to add tensors to the graph. According to the Yolo v2 tiny model,
-		# build a graph and append the tensors to the returning list for computing intermediate
-		# values. One tip is to start adding a placeholder tensor for the first tensor.
-		# (Use 1e-5 for the epsilon value of batch normalization layers.)
-
-		# Return the start tensor and the list of all tensors.
 
 		def flatten(table: List[List[tf.Tensor]]) -> List[tf.Tensor]:
-			""" Flatten 2-dimention array into 1-d array """
+			""" Flatten 2-d array into 1-d array """
 			return sum(table, [])
 
 		return x, flatten(layers)
 
-	@trace
 	def inference(self, img):
-		#with self.g.as_default():
 		feed_dict = {self.input_tensor: img}
 		out_tensors = self.sess.run(self.layers, feed_dict)
 		return out_tensors
 
 
-#
-# Codes belows are for postprocessing step. Do not modify. The postprocessing
-# function takes an input of a resulting tensor as an array to parse it to
-# generate the label box positions. It returns a list of the positions which
-# composed of a label, two coordinates of left-top and right-bottom of the box
-# and its color.
-#
-
-
-@trace
 def postprocessing(predictions):
 
 	n_grid_cells = 13
@@ -258,7 +215,6 @@ def iou(boxA, boxB):
 	return iou
 
 
-@trace
 def non_maximal_suppression(thresholded_predictions, iou_threshold):
 
 	nms_predictions = []
@@ -271,17 +227,16 @@ def non_maximal_suppression(thresholded_predictions, iou_threshold):
 	i = 1
 	while i < len(thresholded_predictions):
 		n_boxes_to_check = len(nms_predictions)
-		#print('N boxes to check = {}'.format(n_boxes_to_check))
 		to_delete = False
-	
+
 		j = 0
 		while j < n_boxes_to_check:
-			curr_iou = iou(thresholded_predictions[i][0], nms_predictions[j][0])
+			curr_iou = iou(thresholded_predictions[i][0],
+			               nms_predictions[j][0])
 			if (curr_iou > iou_threshold):
 				to_delete = True
-			#print('Checking box {} vs {}: IOU = {} , To delete = {}'.format(thresholded_predictions[i][0],nms_predictions[j][0],curr_iou,to_delete))
 			j = j + 1
-	
+
 		if to_delete == False:
 			nms_predictions.append(thresholded_predictions[i])
 		i = i + 1
@@ -298,25 +253,26 @@ def softmax(x):
 	return e_x / e_x.sum(axis=0)
 
 
-def conv(in_tensor, out_chan, weight=None):
-	layer = tf.contrib.slim.conv2d(in_tensor,
-	                               out_chan,
-	                               kernel_size=[3, 3],
-	                               padding="SAME")
-	return layer
+def conv(in_tensor, out_chan, weight) -> tf.Tensor:
+	filter = tf.Variable(weight)
+	return tf.nn.conv2d(in_tensor, filter, [1, 1, 1, 1], "SAME")
 
 
-def batch_norm(in_tensor):
-	return tf.contrib.layers.batch_norm(in_tensor, epsilon=1e-5)
+def batch_norm(in_tensor, weights):
+	mean, variance, gamma, beta = weights["moving_mean"], weights[
+	    "moving_variance"], weights["gamma"], None
+	return tf.nn.batch_normalization(in_tensor, mean, variance, beta, gamma, 1e-5)
 
 
 def leakyRelu(x):
 	return tf.maximum(x, 0.1 * x)
 
 
+def bias(in_tensor, weight: np.ndarray) -> tf.Tensor:
+	bias = tf.Variable(weight)
+	return tf.nn.bias_add(in_tensor, bias)
+
+
 def maxpool(x, stride=[2, 2]):
-	return tf.contrib.slim.max_pool2d(x,
-	                                  kernel_size=[2, 2],
-	                                  stride=stride,
-	                                  padding="SAME")
+	return tf.contrib.slim.max_pool2d(x, kernel_size=[2, 2], stride=stride, padding="SAME")
 
