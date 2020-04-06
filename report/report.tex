@@ -1,0 +1,55 @@
+\documentclass[a4paper,12pt]{article} 
+\usepackage{kotex} 
+\usepackage[figuresright]{rotating} 
+\usepackage{fancyhdr}
+\usepackage{indentfirst}
+\usepackage{fvextra}
+\usepackage{relsize}
+\usepackage{miama}
+\usepackage[T1]{fontenc}
+\usepackage[inline]{enumitem}
+\usepackage{multicol}
+\usepackage{amsmath}	% \text
+\usepackage{amssymb}
+
+\fvset{
+	tabsize=2,
+	numbers=left,
+	frame=leftline,
+	fontsize=\relsize{-1},
+	%파일 입력: \VerbatimInput
+}
+
+%\pagestyle{fancy}
+%\lhead{}
+%\rhead{}
+
+\begin{document} 
+%1페이지
+\title{CS560: Systems for machine Learning\\\large Project 1 Report}
+\author{Jehoon Park\\Junoh Moon\\\\Korea Advanced Institute of Science and Technology}
+\date{\today}
+
+%1페이지 로고
+\begin{figure}[!b]
+	\centering
+	\includegraphics[width=0.7\textwidth]{./kaist_emblem2}
+	\label{figure:school_logo}
+\end{figure}
+
+\maketitle
+\thispagestyle{empty} %Ignore page number of first page
+\newpage
+%page 2
+
+\section{Implementation}
+\section{performance}
+\begin{enumerate}
+		\item inference
+		\item end-to-end
+		\item fps 
+\end{enumerate}
+
+\section{Comparison between GPU and CPU}
+
+\end{document}
