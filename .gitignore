@@ -127,3 +127,9 @@ dmypy.json
 
 # Pyre type checker
 .pyre/
+
+
+# LaTeX
+**/*.aux
+**/*-eps-converted-to.pdf
+**/*.log
