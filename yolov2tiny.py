@@ -16,6 +16,7 @@ class YOLO_V2_TINY(object):
 		self.g = tf.Graph()
 		config = tf.ConfigProto()
 		config.gpu_options.allow_growth = True
+		config.gpu_options.per_process_gpu_memory_fraction = 0.7
 		self.sess = tf.Session(config=config, graph=self.g)
 		self.proc = proc
 		self.weight_pickle = weight_pickle
