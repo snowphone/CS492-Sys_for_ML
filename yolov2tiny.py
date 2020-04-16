@@ -6,11 +6,6 @@ from typing import List
 import numpy as np
 import tensorflow as tf
 
-n_classes = 20
-n_b_boxes = 5
-n_b_box_coord = 4
-
-
 class YOLO_V2_TINY(object):
 	def __init__(self, in_shape, weight_pickle, proc="cpu"):
 		self.g = tf.Graph()
@@ -93,7 +88,10 @@ class YOLO_V2_TINY(object):
 
 def postprocessing(predictions):
 
+	n_classes = 20
 	n_grid_cells = 13
+	n_b_boxes = 5
+	n_b_box_coord = 4
 
 	# Names and colors for each class
 	classes = [
