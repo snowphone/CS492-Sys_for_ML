@@ -68,11 +68,11 @@ class YOLO_V2_TINY(object):
 			l1 = conv_b_batNorm_lRelu_maxpool(x, weights_list[0], [2, 2]);			layers.append(l1)
 			l2 = conv_b_batNorm_lRelu_maxpool(l1[-1], weights_list[1], [2, 2]);		layers.append(l2)
 			l3 = conv_b_batNorm_lRelu_maxpool(l2[-1], weights_list[2], [2, 2]);		layers.append(l3)
-			l4 = conv_b_batNorm_lRelu_maxpool(l3[-1], weights_list[3], [2, 2]);	layers.append(l4)
-			l5 = conv_b_batNorm_lRelu_maxpool(l4[-1], weights_list[4], [2, 2]);	layers.append(l5)
-			l6 = conv_b_batNorm_lRelu_maxpool(l5[-1], weights_list[5], [1, 1]);	layers.append(l6)
-			l7 = conv_b_batNorm_lRelu(l6[-1], weights_list[6]);					layers.append(l7)
-			l8 = conv_b_batNorm_lRelu(l7[-1], weights_list[7]);					layers.append(l8)
+			l4 = conv_b_batNorm_lRelu_maxpool(l3[-1], weights_list[3], [2, 2]);		layers.append(l4)
+			l5 = conv_b_batNorm_lRelu_maxpool(l4[-1], weights_list[4], [2, 2]);		layers.append(l5)
+			l6 = conv_b_batNorm_lRelu_maxpool(l5[-1], weights_list[5], [1, 1]);		layers.append(l6)
+			l7 = conv_b_batNorm_lRelu(l6[-1], weights_list[6]);				layers.append(l7)
+			l8 = conv_b_batNorm_lRelu(l7[-1], weights_list[7]);				layers.append(l8)
 			l9 = conv_b(l8[-1], weights_list[8]);						layers.append(l9)
 
 		with self.g.as_default(), self.g.device(self.proc):
