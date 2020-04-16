@@ -26,37 +26,33 @@ class YOLO_V2_TINY(object):
 	def build_graph(self, in_shape):
 
 		# Auxiliary functions
-		def conv_b(in_tensor, out_chan, weights) -> List[tf.Tensor]:
+		def conv_b(in_tensor, weights) -> List[tf.Tensor]:
 			"""
 			It's a composite function of conv |> bias.
 			returns a list of layers
 			"""
-			l1 = conv(in_tensor, out_chan, weights["kernel"])
+			l1 = conv(in_tensor, weights["kernel"])
 			l2 = bias(l1, weights["biases"])
 			return [l1, l2]
 
-		def conv_b_batNorm_lRelu(in_tensor,
-		                         out_chan,
-		                         weights) -> List[tf.Tensor]:
+		def conv_b_batNorm_lRelu(in_tensor, weights) -> List[tf.Tensor]:
 			"""
 			It's a composite function of conv |> bias |> batch normalization |> leakyRelu.
 			returns a list of layers
 			"""
-			l_list = conv_b(in_tensor, out_chan, weights)
+			l_list = conv_b(in_tensor, weights)
 			l2 = batch_norm(l_list[-1], weights)
 			l3 = leakyRelu(l2)
 			return [*l_list, l2, l3]
 
 		def conv_b_batNorm_lRelu_maxpool(in_tensor,
-		                                 out_chan,
 		                                 weights,
-		                                 pool_stride=[2,
-		                                              2]) -> List[tf.Tensor]:
+		                                 pool_stride) -> List[tf.Tensor]:
 			"""
 			It's a composite function of conv |> bias |> batch normalization |> leakyRelu |> maxpool.
 			returns a list of layers
 			"""
-			l_list = conv_b_batNorm_lRelu(in_tensor, out_chan, weights)
+			l_list = conv_b_batNorm_lRelu(in_tensor, weights)
 			l2 = maxpool(l_list[-1], pool_stride)
 			return [*l_list, l2]
 
@@ -69,16 +65,15 @@ class YOLO_V2_TINY(object):
 
 		with self.g.as_default(), self.g.device(self.proc):
 			x = tf.placeholder(tf.float32, (self.batchSize, *in_shape), name="input")
-			l1 = conv_b_batNorm_lRelu_maxpool(x, 16, weights_list[0], [2, 2]);			layers.append(l1)
-			l2 = conv_b_batNorm_lRelu_maxpool(l1[-1], 32, weights_list[1], [2, 2]);		layers.append(l2)
-			l3 = conv_b_batNorm_lRelu_maxpool(l2[-1], 64, weights_list[2], [2, 2]);		layers.append(l3)
-			l4 = conv_b_batNorm_lRelu_maxpool(l3[-1], 128, weights_list[3], [2, 2]);	layers.append(l4)
-			l5 = conv_b_batNorm_lRelu_maxpool(l4[-1], 256, weights_list[4], [2, 2]);	layers.append(l5)
-			l6 = conv_b_batNorm_lRelu_maxpool(l5[-1], 512, weights_list[5], [1, 1]);	layers.append(l6)
-			l7 = conv_b_batNorm_lRelu(l6[-1], 1024, weights_list[6]);					layers.append(l7)
-			l8 = conv_b_batNorm_lRelu(l7[-1], 1024, weights_list[7]);					layers.append(l8)
-			outFilterSize = n_b_boxes * (n_b_box_coord + 1 + n_classes)
-			l9 = conv_b(l8[-1], outFilterSize, weights_list[8]);						layers.append(l9)
+			l1 = conv_b_batNorm_lRelu_maxpool(x, weights_list[0], [2, 2]);			layers.append(l1)
+			l2 = conv_b_batNorm_lRelu_maxpool(l1[-1], weights_list[1], [2, 2]);		layers.append(l2)
+			l3 = conv_b_batNorm_lRelu_maxpool(l2[-1], weights_list[2], [2, 2]);		layers.append(l3)
+			l4 = conv_b_batNorm_lRelu_maxpool(l3[-1], weights_list[3], [2, 2]);	layers.append(l4)
+			l5 = conv_b_batNorm_lRelu_maxpool(l4[-1], weights_list[4], [2, 2]);	layers.append(l5)
+			l6 = conv_b_batNorm_lRelu_maxpool(l5[-1], weights_list[5], [1, 1]);	layers.append(l6)
+			l7 = conv_b_batNorm_lRelu(l6[-1], weights_list[6]);					layers.append(l7)
+			l8 = conv_b_batNorm_lRelu(l7[-1], weights_list[7]);					layers.append(l8)
+			l9 = conv_b(l8[-1], weights_list[8]);						layers.append(l9)
 
 		with self.g.as_default(), self.g.device(self.proc):
 			self.sess.run(tf.global_variables_initializer())
@@ -254,7 +249,7 @@ def softmax(x):
 	return e_x / e_x.sum(axis=0)
 
 
-def conv(in_tensor, out_chan, weight) -> tf.Tensor:
+def conv(in_tensor, weight) -> tf.Tensor:
 	filter = tf.Variable(weight)
 	return tf.nn.conv2d(in_tensor, filter, [1, 1, 1, 1], "SAME")
 
@@ -274,6 +269,6 @@ def bias(in_tensor, weight: np.ndarray) -> tf.Tensor:
 	return tf.nn.bias_add(in_tensor, bias)
 
 
-def maxpool(x, stride=[2, 2]):
+def maxpool(x, stride):
 	return tf.contrib.slim.max_pool2d(x, kernel_size=[2, 2], stride=stride, padding="SAME")
-
+		#tf.nn.max_pool2d(x, [2,2], stride, "SAME")
