@@ -268,5 +268,4 @@ def bias(in_tensor, weight: np.ndarray) -> tf.Tensor:
 
 
 def maxpool(x, stride):
-	return tf.contrib.slim.max_pool2d(x, kernel_size=[2, 2], stride=stride, padding="SAME")
-		#tf.nn.max_pool2d(x, [2,2], stride, "SAME")
+	return tf.nn.max_pool2d(x, [2,2], stride, "SAME")
