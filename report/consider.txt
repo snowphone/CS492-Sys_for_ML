@@ -31,8 +31,13 @@ GPU : 1.352  0.104  0.011  ...
 CPU : 43.591 /       0.058      /      0.096         /  10.392
 GPU : 24.778 /       0.016      /      0.055         /  18.282
 
-Total : 출력되는 값인 줄 알았는데 그거 함수 재는거 였음 여기 total은 end-to-end_sum임 (total/453 = end-to-end)
--> 몇 번 돌려서 평균값 해야될 것 같음 지금은 그냥 1번 해서 나온 값임
+Total : 마지막으로 출력되는 값인 줄 알았는데 그거 함수 시간 재는거 였음 여기 total은 end-to-end_sum임 (total/453 = Avg.end-to-end)
+
+위에 값들 몇 번 돌려서 평균값 해야될 것 같음 지금은 그냥 1번 해서 나온 값임
+
+Inference FPS도 필요한지 잘 모르겠네요. lecture #5에 FPS measurement exclusively for DNN computation 라는 말이 있었음.
+이후에 FPS improve 하려고하면 resizing part는 어차피 동일 할테니 inference FPS가 더 명확한 수치이기도 한 것 같고..
+
 
 3. comparison the execution time from CPU and GPU and analyze it
 
