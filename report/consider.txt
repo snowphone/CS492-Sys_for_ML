@@ -1,0 +1,28 @@
+Write a report of one or two pages long. Your report must include
+
+1. how you implemented
+
+1)R/W Video openCV 이용, out video attributes는 in video를 get으로, fourcc는 코덱? 문제로 오류가 있어서 저렇게 했다
+
+2)tensorflow를 이용해서, Yolov2tiny의 40layer를 구현하고, 이미 training된 weight를 넣어주었다. 
+
+3)매 loop마다 input frame을 yolov2tiny에 맞게 resize해주고 이를 input으로 inference 한다. 이후 postprocessing을 거쳐 라벨과 box를 뽑고
+  이를 다시 원래의 사이즈로 reszie하고 input frame과 합쳐서 output frame을 저장한다. 
+
+2. execution time and how many FPS processed (end-to-end, only for inference)
+      total     / Inference(frame) / end-to-end(frame)  /   FPS
+CPU : 47.308789 /       0.062      /      0.100         /  10.004
+GPU : 26.879922 /       0.016      /      0.053         /  18.736
+
+
+3. comparison the execution time from CPU and GPU and analyze it.
+inference 빼면 시간 비슷하지 않을까 싶음
+      end-to-end - inference
+CPU :         0.038
+GPU :         0.037
+
+Improvement
+Inference : 3.875x
+Total     : 1.760x
+
+The purpose of the report is to show your understanding. Please write the answer short and clear.
