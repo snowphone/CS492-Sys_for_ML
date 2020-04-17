@@ -124,10 +124,6 @@ def video_object_detection(in_video_path: str,
 		batched_tensors_list = yolo.inference(image)
 		inference_time = (datetime.now() - beg_infer).total_seconds()
 
-		if firstTime:
-			store_tensors(map(lambda x: x[0], batched_tensors_list))	# Remove batch shape
-			firstTime = False
-
 		tensor = batched_tensors_list[-1][0]
 
 		proposals = yolov2tiny.postprocessing(tensor)
@@ -138,6 +134,10 @@ def video_object_detection(in_video_path: str,
 		end_to_end_time = (datetime.now() - beg_start).total_seconds()
 		acc.append((inference_time, end_to_end_time))
 		print("#{} inference: {:.3f}\tend-to-end: {:.3f}".format(len(acc), inference_time, end_to_end_time))
+
+		if firstTime:
+			store_tensors(map(lambda x: x[0], batched_tensors_list))	# Remove batch shape
+			firstTime = False
 
 	reader.release()
 	writer.release()
