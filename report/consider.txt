@@ -38,6 +38,7 @@ Total : 마지막으로 출력되는 값인 줄 알았는데 그거 함수 시�
 Inference FPS도 필요한지 잘 모르겠네요. lecture #5에 FPS measurement exclusively for DNN computation 라는 말이 있었음.
 이후에 FPS improve 하려고하면 resizing part는 어차피 동일 할테니 inference FPS가 더 명확한 수치이기도 한 것 같고..
 
+->결과 분석시 inference FPS간 비교를 해서 inference는 GPU 가속의 힘을 봤지만, postprocessing은 CPU만을 이용하여 sequential하게 구현되었기 때문에 gpu 모드로 동작할 때 병목으로 작용하였다 같은 식으로 서술해보아도 좋지 않을까요? 
 
 3. comparison the execution time from CPU and GPU and analyze it
 
@@ -49,6 +50,7 @@ GPU :         0.039
 GPU using improvement over CPU(문법이 맞나?)
 Inference : 3.625x
 Total     : 1.760x
+
 
 The purpose of the report is to show your understanding. Please write the answer short and clear.
 
