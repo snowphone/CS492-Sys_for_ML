@@ -1,28 +1,53 @@
 Write a report of one or two pages long. Your report must include
 
-1. how you implemented
+1. how you implemented (뭔가 중요한 포인트가 더 있다면 적어주시면 됩니다)
 
-1)R/W Video openCV 이용, out video attributes는 in video를 get으로, fourcc는 코덱? 문제로 오류가 있어서 저렇게 했다
+  1) open video with openCV
 
-2)tensorflow를 이용해서, Yolov2tiny의 40layer를 구현하고, 이미 training된 weight를 넣어주었다. 
+    R/W Video openCV 이용, out video attributes는 in video를 get으로, fourcc는 코덱? 문제로 오류가 있어서 저렇게 했다
 
-3)매 loop마다 input frame을 yolov2tiny에 맞게 resize해주고 이를 input으로 inference 한다. 이후 postprocessing을 거쳐 라벨과 box를 뽑고
-  이를 다시 원래의 사이즈로 reszie하고 input frame과 합쳐서 output frame을 저장한다. 
+  2) yolov2tiny tensor graph building
+
+    gpu memory 0.7 -> 메모리 터져서 넣어줌
+    tensorflow를 이용해서, Yolov2tiny의 40layer를 구현하고, 이미 training된 weight를 넣어주었다. 
+
+  3) obj detection
+
+    매 loop마다 input frame을 yolov2tiny에 맞게 resize해주고 이를 input으로 inference 한다. 이 결과를 postprocessing을 거쳐 라벨과 box로 뽑고
+    box를 원래의 사이즈로 reszie하고 input frame과 합쳐서 output frame을 저장한다. 
 
 2. execution time and how many FPS processed (end-to-end, only for inference)
-      total     / Inference(frame) / end-to-end(frame)  /   FPS
-CPU : 47.308789 /       0.062      /      0.100         /  10.004
-GPU : 26.879922 /       0.016      /      0.053         /  18.736
 
+#1~2에서 시간이 많이 걸리는데 이에대한 이유 서술하면 좋을듯.
+why? Due to initializing tensor?
 
-3. comparison the execution time from CPU and GPU and analyze it.
-inference 빼면 시간 비슷하지 않을까 싶음
+첫 프레임 텐서 저장하는 거 때문에 그런가 했는데 옮겨도 똑같았음.(약간의 차이는 있긴 했지만 메인이 이거 때문이 아님)
+
+       #1      #2     #3   ...
+CPU : 0.157  0.083  0.078  ...
+GPU : 1.352  0.104  0.011  ...
+
+      total  / Inference(frame) / end-to-end(frame)  /   FPS
+CPU : 43.591 /       0.058      /      0.096         /  10.392
+GPU : 24.778 /       0.016      /      0.055         /  18.282
+
+Total : 출력되는 값인 줄 알았는데 그거 함수 재는거 였음 여기 total은 end-to-end_sum임 (total/453 = end-to-end)
+-> 몇 번 돌려서 평균값 해야될 것 같음 지금은 그냥 1번 해서 나온 값임
+
+3. comparison the execution time from CPU and GPU and analyze it
+
+inference 빼면 시간 비슷하지 않을까 싶음 -> 맞음 비슷함
       end-to-end - inference
 CPU :         0.038
-GPU :         0.037
+GPU :         0.039
 
-Improvement
-Inference : 3.875x
+GPU using improvement over CPU(문법이 맞나?)
+Inference : 3.625x
 Total     : 1.760x
 
 The purpose of the report is to show your understanding. Please write the answer short and clear.
+
+Video frame size : 540 x 540
+Video fps = 30
+Video length = 15s
+Video frame number : 453
