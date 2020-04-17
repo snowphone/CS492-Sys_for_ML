@@ -143,6 +143,7 @@ def video_object_detection(in_video_path: str,
 	writer.release()
 	inference_sum, end_to_end_sum = reduce(lambda x,y: (x[0] + y[0], x[1] + y[1]), acc)
 	size = len(acc)
+	print("Total inference: {:.3f}s\ttotal end-to-end: {:.3f}s".format(inference_sum, end_to_end_sum))
 	print("Average inference: {:.3f}s\taverage end-to-end: {:.3f}s".format(inference_sum/size, end_to_end_sum/size))
 	print("Throughput: {:.3f}fps".format(size / end_to_end_sum))
 	return
