@@ -4,22 +4,22 @@ Write a report of one or two pages long. Your report must include
 
   1) open video with openCV
 
-    R/W Video openCV 이용, out video attributes는 in video를 get으로, fourcc는 코덱? 문제로 오류가 있어서 저렇게 했다
+    R/W Video openCV 이용, out video attributes는 reader.get 메소드를 이용하여 최대한 원본을 유지하였으나, 비디오 코덱의 경우 OS마다 기본적으로 지원 가능한 코덱이 다르므로, fourcc는 mp4v를 사용함.
 
   2) yolov2tiny tensor graph building
 
-    gpu memory 0.7 -> 메모리 터져서 넣어줌
-    tensorflow를 이용해서, Yolov2tiny의 40layer를 구현하고, 이미 training된 weight를 넣어주었다. 
+    gpu memory 0.7 -> 메모리 터져서 넣어줌. allow_gpu_growth 옵션만으로는 부족하여 추가했다.
+    tensorflow를 이용해서, Yolov2tiny의 40layer를 구현하였다. 각 레이어를 생성하는 과정에서 각 레이어에 알맞은 weight 값을 적용하였다. 제공된 pickle 파일에서 kernel은 conv_2d 레이어를, biases는 bias_add 레이어를, (moving_variance, gamma, moving_mean)은 batch_normalization 레이어를 초기화 하는데 사용되었다.
 
   3) obj detection
 
-    매 loop마다 input frame을 yolov2tiny에 맞게 resize해주고 이를 input으로 inference 한다. 이 결과를 postprocessing을 거쳐 라벨과 box로 뽑고
+    매 loop마다 input frame을 yolov2tiny에 맞게 resize해주고 이를 input으로 inference 한다. Inference된 텐서를 postprocessing 함수에 넣어 bounding box를 추출한다. 이 과정에서 기준값 이하의 confidence 값을 가진 bounding box들은 소거되고, 남은 box들도 non-max-suppression 을 통해 각 object마다 confidence값이 가장 높은 하나의 bounding box만 남겨놓는다.
     box를 원래의 사이즈로 reszie하고 input frame과 합쳐서 output frame을 저장한다. 
 
 2. execution time and how many FPS processed (end-to-end, only for inference)
 
 #1~2에서 시간이 많이 걸리는데 이에대한 이유 서술하면 좋을듯.
-why? Due to initializing tensor?
+why? Due to initializing tensor? 혹은 캐싱?ㅠ
 
 첫 프레임 텐서 저장하는 거 때문에 그런가 했는데 옮겨도 똑같았음.(약간의 차이는 있긴 했지만 메인이 이거 때문이 아님)
 
