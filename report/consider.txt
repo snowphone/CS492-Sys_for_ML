@@ -9,7 +9,9 @@ Write a report of one or two pages long. Your report must include
   2) yolov2tiny tensor graph building
 
     gpu memory 0.7 -> 메모리 터져서 넣어줌. allow_gpu_growth 옵션만으로는 부족하여 추가했다.
-    tensorflow를 이용해서, Yolov2tiny의 40layer를 구현하였다. 각 레이어를 생성하는 과정에서 각 레이어에 알맞은 weight 값을 적용하였다. 제공된 pickle 파일에서 kernel은 conv_2d 레이어를, biases는 bias_add 레이어를, (moving_variance, gamma, moving_mean)은 batch_normalization 레이어를 초기화 하는데 사용되었다.
+    tensorflow를 이용해서, Yolov2tiny의 40layer를 구현하였다. 
+    이번 과제는 주어진 weight ndarry 값을 사용하여 weight parameter를 직접 설정하고 inference를 하는것이 목적이므로, 편의성이 강조된 대신 weight값을 변경할 수 없는 tf.contrib 모듈 대신 weight parameter를 manual하게 부여해줄 수 있는 tf.nn 모듈 내의 함수를 사용하였다.
+    각 레이어를 생성하는 과정에서 각 레이어에 알맞은 weight 값을 적용하였다. 제공된 pickle 파일에서 kernel은 conv_2d 레이어를, biases는 bias_add 레이어를, (moving_variance, gamma, moving_mean)은 batch_normalization 레이어를 초기화 하는데 사용되었다.
 
   3) obj detection
 
