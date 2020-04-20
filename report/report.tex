@@ -127,7 +127,7 @@ Finally, each object was labelled on the frame through the given post-processed 
 	\caption{This results are averages of 100 indivisual experiments.}
 	\label{tab:eval}
 \end{table}
-The total time is that whole time of 23.89096s on GPU and 44.00026s on CPU. End-to-end time includes preprocessing input frame, inference, post processing, and writing the result clip.
+The total time is the time of processing the whole video clip. End-to-end time includes preprocessing input frame, inference, post processing, and writing the result clip.
 It was shown that the GPU performed the whole process faster about 1.84 times  than the CPU\@.
  This result was due to the faster inference time of GPU\@. During the inference, the \emph{Tiny YOLOv2} performs convolution layers, which require nested loops computation.
 GPU’s highly parallel architecture can handle this kind of calculations better than CPU, so the inference time was decreased significantly about 3.88 times. 
@@ -152,8 +152,9 @@ However, there is a triple-nested loop in the post processing part, so it looks 
 	\label{tab:each_inference}
 \end{table}
 
-Interesting result was shown at the beginning of the ‘session.run’. On CPU, it took 0.15 seconds to inference the first frame, while the average time was 0.05979s.
-Moreover, on the GPU, it took 1.252 seconds for the inference first frame and 0.103 for the second, while the average was 0.01539. 
+Interesting result was shown at the beginning of the ‘session.run’. On CPU, it took 0.153 seconds to inference the first frame, while the average time was 0.0597.
+Moreover, on the GPU, it took 1.252 seconds for the inference first frame and 0.103 for the second, while the average was 0.0154.
+These were because at the beginning, the tensorflow performed initializations. Also, the significant slow first run time of GPU was because the tensorflow used cuDNN’s autotune feature for convolution layers to compute them faster.  
 
 
 \end{document}
