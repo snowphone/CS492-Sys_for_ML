@@ -76,11 +76,6 @@ For each device, CPU and GPU, the inference time and end-to-end time were measur
 
 \section{Implementation}
 
-\subsection{Code}
-\subsubsection{\_\_init\_\_.py}
-\lstinputlisting[multicols=2, frame=none, basicstyle=\ttfamily\tiny]{../__init__.py}
-\subsubsection{yolov2tiny.py}
-\lstinputlisting{../yolov2tiny.py}
 
 \subsection{Building model}
 
@@ -92,7 +87,8 @@ For each device, CPU and GPU, the inference time and end-to-end time were measur
 \end{figure}
 
 
-To detect objects, a \emph{YOLO\_V2\_TINY} instance was created by invoking \lstinline{__init__} method itself. While invoked, the method generated the model by stacking composite layers, configuring some GPU options, creating its own session and graph, and so on. 
+To detect objects, a \emph{YOLO\_V2\_TINY} instance was created by invoking \lstinline{__init__} method itself. 
+While invoked, the method generated the model by stacking composite layers, configuring some GPU options, creating its own session and graph, and so on. 
 Each composite layer consists of 1--5 base layers: \lstinline{tf.nn.conv2d}, \lstinline{tf.nn.bias_add}, \lstinline{tf.nn.batch_normalization}, \lstinline{tf.maximum}, and \lstinline{tf.nn.max_pool2d}.
 In addition, some base layers --- \lstinline{conv2d}, and \lstinline{bias_add}, and \lstinline{batch_normalization} --- were initialized with pretrained weight parameters by passing the parameter which is wrapped into \lstinline{tf.Variable};
 ‘kernel’ was used for \lstinline{conv2d}; 
@@ -110,7 +106,7 @@ After boilerplate codes were executed, the main loop started.
  After being resized, tensors were inferred by the instance.
  The tensors are a set of bounding boxes, whereas they were not yet enough to represent objects in the frame because there were bounding boxes with a low confidence score than threshold, and the objects in the frame were pointed by too many bounding boxes.
 
-Thus, two steps were processed in ‘YOLO\_V2\_TINY.
+Thus, two steps were processed in \emph{YOLO\_V2\_TINY}.
 postprossing’ method; the first step is filtering bounding boxes whose score is lower than threshold; the second step is ‘non-max-suppression’, which only lefts the best bounding box and remove others per object.
 Finally, each object was labelled on the frame through the given post-processed bounding boxes. 
 
@@ -118,12 +114,14 @@ Finally, each object was labelled on the frame through the given post-processed 
 % Please add the following required packages to your document preamble:
 \begin{table}[h!]
 	\centering
-	\begin{tabular}{@{}cccc@{}}
-		\toprule
-		\multicolumn{1}{l}{} & \multicolumn{1}{c}{End-to-end sum (sec)} & \multicolumn{1}{c}{Average end-to-end (FPS)} & \multicolumn{1}{c}{Average inference (FPS)} \\ \midrule
-		GPU & 23.89096 & 18.97533207 & 64.97725796 \\ 
-		CPU & 44.00026 & 10.29760066 & 16.72520488 \\ \bottomrule
-	\end{tabular}
+	\resizebox{\textwidth}{!}{%
+		\begin{tabular}{@{}lccccc@{}}
+			\toprule
+			& Total (sec) & Average end-to-end (sec/frame) & Average end-to-end (FPS) & Average inference (sec/frame) & Average inference (FPS) \\ \midrule
+			CPU & 44.0003 & 0.0598 & 10.2976 & 0.0971 & 16.7252 \\
+			GPU & 23.8910 & 0.0527 & 18.9753 & 0.0154 & 64.9773 \\ \bottomrule
+		\end{tabular}%
+	}
 	\caption{This results are averages of 100 indivisual experiments.}
 	\label{tab:eval}
 \end{table}
@@ -156,6 +154,12 @@ Interesting result was shown at the beginning of the ‘session.run’. On CPU, 
 Moreover, on the GPU, it took 1.252 seconds for the inference first frame and 0.103 for the second, while the average was 0.015.
 These were because at the beginning, the tensorflow performed initializations. Also, the significant slow first run time of GPU was because the tensorflow used cuDNN’s autotune feature for convolution layers to compute them faster.  
 
+
+\subsection{Code}
+\subsubsection{\_\_init\_\_.py}
+\lstinputlisting{../__init__.py}
+\subsubsection{yolov2tiny.py}
+\lstinputlisting{../yolov2tiny.py}
 
 \end{document}
 
