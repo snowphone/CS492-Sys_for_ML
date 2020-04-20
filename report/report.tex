@@ -79,14 +79,6 @@ For each device, CPU and GPU, the inference time and end-to-end time were measur
 
 \subsection{Building model}
 
-\begin{figure}[t]
-	\centering
-	\includegraphics[width=\textwidth]{./model}
-	\caption{The restored model graph visualization}
-	\label{figure:graph}
-\end{figure}
-
-
 To detect objects, a \emph{YOLO\_V2\_TINY} instance was created by invoking \lstinline{__init__} method itself. 
 While invoked, the method generated the model by stacking composite layers, configuring some GPU options, creating its own session and graph, and so on. 
 Each composite layer consists of 1--5 base layers: \lstinline{tf.nn.conv2d}, \lstinline{tf.nn.bias_add}, \lstinline{tf.nn.batch_normalization}, \lstinline{tf.maximum}, and \lstinline{tf.nn.max_pool2d}.
@@ -95,6 +87,18 @@ In addition, some base layers --- \lstinline{conv2d}, and \lstinline{bias_add}, 
 ‘bias’ was used for \lstinline{bias_add};
 finally ‘moving\_variance’, ‘gamma’, and ‘moving\_mean’ were used for \lstinline{batch_normalization}. Furthermore, \lstinline{tf.maximum} was used for implementing leakyRelu layer and \lstinline{max_pool2d} layer was set by a $(2 \times 2)$ kernel and a $(2 \times 2)$ stride except the last \lstinline{max_pool2d}, which was set by $(1 \times 1)$ stride. Therefore, the \emph{Tiny YOLOv2} model was generated as Figure \ref{figure:graph}.
 Although the main logic was completed, some implementation details still remained. For the sake of preventing memory error in GPU mode, \lstinline{per_process_gpu_memory_fraction} configuration was added.
+
+\begin{figure}
+	\centering
+	\includegraphics[width=\textwidth]{./model}
+	\includegraphics[height=0.5\textheight]{./model_crop3}
+	\caption{The above figure is the entire graph generated and restored by Tensorflow. 
+	The other is the cropped figure of the above since the whole graph is too verbose to recognize how it is modeled.
+	Therfore, we cropped for focusing one main-composite-layer which consists of \lstinline{conv2d}, \lstinline{batch_normalization}, \lstinline{leakyRelu}, and so on.
+	}
+	\label{figure:graph}
+\end{figure}
+
 
 \subsection{Video processing}
 Since input data was given in video clips, we had to split into a set of images. For the purpose of video processing, openCV was chosen. By using VideoCapture and VideoWriter in openCV, we could split a clip into frames and merge into a clip. While initiated, a VideoWriter instance had to keep the original clip’s information: FPS, width, height, and fourcc (codec). To keep them the same, \lstinline{VideoCapture.get} method was invoked. However, fourcc value couldn’t be equal to the original on account of the lack of supporting codecs in the OS, so it was hard-coded into “mp4v”.
