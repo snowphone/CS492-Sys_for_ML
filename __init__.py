@@ -1,171 +1,53 @@
-import os
 import sys
-from datetime import datetime
-from functools import reduce, wraps
-from typing import List, Tuple
-
-import cv2
 import numpy as np
+import cv2
+import time
 
 import yolov2tiny
 
-
-def measure(func):
-	""" Measure how long a function takes time """
-	@wraps(func)
-	def impl(*args, **kargs):
-		beg=datetime.now()
-		ret = func(*args, **kargs)
-		time = (datetime.now() - beg).total_seconds()
-		print("{}: {}s".format(func.__name__, time))
-		return ret
-
-	return impl
-
-
-def open_video_with_opencv(
-        in_video_path: str,
-        out_video_path: str) -> (cv2.VideoCapture, cv2.VideoWriter):
-
-	reader = cv2.VideoCapture(in_video_path)
-	if not reader.isOpened():
-		raise Exception("Failed to open \'{}\'".format(in_video_path))
-
-	fps = reader.get(cv2.CAP_PROP_FPS)
-	fourcc = cv2.VideoWriter_fourcc(*"mp4v")
-	width = int(reader.get(cv2.CAP_PROP_FRAME_WIDTH))
-	height = int(reader.get(cv2.CAP_PROP_FRAME_HEIGHT))
-
-	writer = cv2.VideoWriter(out_video_path, fourcc, fps, (width, height))
-	if not writer.isOpened():
-		raise Exception(
-		    "Failed to create video named \'{}\'".format(out_video_path))
-
-	return reader, writer
-
-
-def resize_input(im: np.ndarray) -> np.ndarray:
-	imsz = cv2.resize(im, (416, 416), interpolation=cv2.INTER_AREA)
+def resize_input(im):
+	imsz = cv2.resize(im, (416, 416))
 	imsz = imsz / 255.
-	imsz = imsz[:, :, ::-1]
-	imsz = np.asarray(imsz, dtype=np.float32)
-	return imsz.reshape((1, *imsz.shape))
+	imsz = imsz[:,:,::-1]
+	return np.asarray(imsz, dtype=np.float32)
 
+def image_object_detection(in_image, out_image):
+	frame = cv2.imread(in_image)
 
-color_t = Tuple[float, float, float]
-coord_t = Tuple[int, int]
-proposal_t = Tuple[str, coord_t, coord_t, color_t]
+	y2t = yolov2tiny.YOLO_V2_TINY([1, 416, 416, 3], "../../y2t_weights.pickle")
 
+	t_end2end = time.time() 
 
-def restore_shape(proposals: List[proposal_t], restore_width: int,
-                  restore_height: int) -> List[proposal_t]:
-	"""
-	Read proposal list and reshape proposal coordinates into original video's resolution
-	"""
-	def reshape(record: proposal_t) -> proposal_t:
-		"""
-		Get a record and reshape coordinates into original ratio.
-		cf) lu means left upper and rb means right bottom.
-		"""
-		calc_coord = lambda x, new_d: np.clip(int(x / 416 * new_d), 0, new_d)
-		name, (lux, luy), (rbx, rby), color = record
-		lux, rbx = map(lambda x: calc_coord(x, restore_width), [lux, rbx])
-		luy, rby = map(lambda y: calc_coord(y, restore_height), [luy, rby])
-		return (name, (lux, luy), (rbx, rby), color)
+	_frame = resize_input(frame)
+	_frame = np.expand_dims(_frame, axis=0)
 
-	return [reshape(it) for it in proposals]
+	t_inference = time.time()
+	tout = y2t.inference(_frame)
+	t_inference = time.time() - t_inference
 
+	tout = np.squeeze(tout)
+	boxes = yolov2tiny.postprocessing(tout)
+	frame = cv2.resize(frame, (416, 416), interpolation = cv2.INTER_CUBIC)
 
-def draw(image: np.ndarray, proposals: List[proposal_t]) -> np.ndarray:
-	'''
-	Draw bounding boxes into image and return it
+	for b in boxes:
+		frame = cv2.rectangle(frame, b[1], b[2], b[3])
+		cv2.putText(frame, b[0], (int(min(b[1][0], b[2][0]) - 1), int(min(b[1][1], b[2][1])) - 5), cv2.FONT_HERSHEY_SIMPLEX, 0.5, b[3], 1)
 
-	proposals contains a list of (best_class_name, lefttop, rightbottom, color).
-	'''
-	for name, lefttop, rightbottom, color in proposals:
-		height, width, _channel = image.shape
+	t_end2end = time.time() - t_end2end
 
-		cv2.rectangle(image, lefttop, rightbottom, color, 2)
-		cv2.putText(image, name, (lefttop[0], max(0, lefttop[1] - 10)),
-		            cv2.FONT_HERSHEY_SIMPLEX, 0.5, color, 2)
+	cv2.imwrite(out_image, frame)
 
-	return image
-
-
-def store_tensors(tensors: List[np.ndarray]):
-	os.makedirs("intermediate", exist_ok=True)
-	for i, tensor in enumerate(tensors):
-		path = os.path.join("intermediate", "layer_{}.npy".format(i))
-		np.save(path, tensor)
-
-
-@measure
-def video_object_detection(in_video_path: str,
-                           out_video_path: str,
-                           proc="cpu"):
-	"""
-	Read a videofile, scan each frame and draw objects using pretrained yolo_v2_tiny model.
-	Finally, store drawed frames into 'out_video_path'
-	"""
-	reader, writer = open_video_with_opencv(in_video_path, out_video_path)
-	yolo = yolov2tiny.YOLO_V2_TINY((416, 416, 3), "./y2t_weights.pickle", proc)
-
-	width = int(reader.get(cv2.CAP_PROP_FRAME_WIDTH))
-	height = int(reader.get(cv2.CAP_PROP_FRAME_HEIGHT))
-
-	acc, firstTime = [], True
-	while reader.isOpened():
-		okay, original_image = reader.read()
-		if not okay:
-			break
-		beg_start = datetime.now()
-		image = resize_input(original_image)
-		beg_infer = datetime.now()
-		batched_tensors_list = yolo.inference(image)
-		inference_time = (datetime.now() - beg_infer).total_seconds()
-
-		tensor = batched_tensors_list[-1][0]
-
-		proposals = yolov2tiny.postprocessing(tensor)
-		proposals = restore_shape(proposals, width, height)
-		out_image = draw(original_image, proposals)
-		writer.write(out_image)
-
-		end_to_end_time = (datetime.now() - beg_start).total_seconds()
-		acc.append((inference_time, end_to_end_time))
-		print("#{} inference: {:.3f}\tend-to-end: {:.3f}".format(len(acc), inference_time, end_to_end_time))
-
-		if firstTime:
-			store_tensors(map(lambda x: x[0], batched_tensors_list))	# Remove batch shape
-			firstTime = False
-
-	reader.release()
-	writer.release()
-	inference_sum, end_to_end_sum = reduce(lambda x,y: (x[0] + y[0], x[1] + y[1]), acc)
-	size = len(acc)
-	print("Total inference: {:.3f}s\ttotal end-to-end: {:.3f}s".format(inference_sum, end_to_end_sum))
-	print("Average inference: {:.3f}s\taverage end-to-end: {:.3f}s".format(inference_sum/size, end_to_end_sum/size))
-	print("Throughput: {:.3f}fps".format(size / end_to_end_sum))
-	return
-
+	print('DNN inference elapsed time: %.3f' % t_inference)
+	print('End-to-end elapsed time   : %.3f' % t_end2end)
 
 def main():
 	if len(sys.argv) < 3:
-		print(
-		    "Usage: python3 __init__.py [in_video.mp4] [out_video.mp4] ([cpu|gpu])"
-		)
+		print ("Usage: python3 __init__.py [in_image] [out_image]")
 		sys.exit()
+	image_in = sys.argv[1] 
+	image_out = sys.argv[2] 
 
-	in_video_path = sys.argv[1]
-	out_video_path = sys.argv[2]
-
-	if len(sys.argv) == 4:
-		proc = sys.argv[3]
-	else:
-		proc = "cpu"
-
-	video_object_detection(in_video_path, out_video_path, proc)
-
+	image_object_detection(image_in, image_out)
 
 if __name__ == "__main__":
 	main()
