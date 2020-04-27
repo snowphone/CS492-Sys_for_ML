@@ -24,6 +24,7 @@ class DnnInferenceEngine(object):
 						skip_current = True
 				if skip_current:
 					continue
+				current.run()
 				if self.g.is_out_node(current):
 					out = current.result
 				done.add(current)
