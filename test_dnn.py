@@ -10,18 +10,22 @@ class TestNode(unittest.TestCase):
 		rhs = np.array([4, 5])
 
 		function = dnn.DnnNode()._verify_shapes
-		self.assertRaises(TypeError, function, lhs, rhs)
+		self.assertRaises(dnn.DNNException, function, lhs, rhs)
 
 	def test_leakyrelu(self):
 		arr = np.array([-1, 0, 1, 2, 3])
-		lr = dnn.LeakyReLU("leakyReLU", arr)
+		node = dnn.DnnNode()
+		node.result = arr
+		lr = dnn.LeakyReLU("leakyReLU", node)
 		lr.run()
 		actual = lr.result
 		np.testing.assert_array_equal([-0.1, 0, 1, 2, 3], actual)
 
 	def test_biasadd(self):
-		lhs = np.array([1, 2, 3, 4, 5])
+		lhs = dnn.DnnNode()
+		lhs.result = np.array([1, 2, 3, 4, 5])
 		rhs = np.array([1, 1, 1, 1, 1])
+
 		ba = dnn.BiasAdd("BiasAdd", lhs, rhs)
 		ba.run()
 		result = ba.result

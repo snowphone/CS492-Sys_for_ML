@@ -90,6 +90,10 @@ class DnnGraphBuilder(object):
 		self.set_in_node(out_node)  # Assume there's only one input
 		return out_node
 
+class DNNException(Exception):
+	def __init__(self, msg):
+		super().__init__(msg)
+
 class DnnNode(object):
 	'''
 	This is an interface for layers
@@ -117,13 +121,13 @@ class DnnNode(object):
 	def _verify_shapes(self, lhs: np.ndarray, rhs: np.ndarray):
 		'''
 		Compare the shapes of given numpy arrays.
-		If the shape is not equal, then TypeError would be raised to interrupt the flow.
+		If the shape is not equal, then DNNException would be raised to interrupt the flow.
 
 		@throws TypeError
 		'''
 		if lhs.shape != rhs.shape:
 			className = self.__class__.__name__
-			raise TypeError("While constructing {}, lhs's shape {} != rhs's shape {}".format(className, lhs.shape, rhs.shape))
+			raise DNNException("While constructing {}, lhs's shape {} != rhs's shape {}".format(className, lhs.shape, rhs.shape))
 
 
 #
@@ -142,6 +146,7 @@ class Conv2D(DnnNode):
 		self.kernel = kernel
 		self.strides = strides
 
+		# Need some verification codes...
 
 
 
@@ -151,6 +156,7 @@ class Conv2D(DnnNode):
 		pass
 
 	def _stride(self):
+		pass
 
 	def _pad(self, matrix: np.ndarray) -> np.ndarray:
 
