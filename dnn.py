@@ -98,13 +98,14 @@ class DnnNode(object):
 		'''
 		Construct the layer and print its name if correctly built
 		'''
+		self.in_node = None	# type: np.ndarray
 		pass
 
 	def run(self):
 		'''
 		After invoking `DnnNode.run` method, `DnnNode.result` will contin the calculated value
 		'''
-		self.result = None 
+		self.result = None	# type: np.ndarray
 	
 	def _notify_completion(self, name: str):
 		'''
@@ -130,22 +131,41 @@ class DnnNode(object):
 #
 
 class Conv2D(DnnNode):
-	def __init__(self, name, in_node, kernel, strides, padding):
-		pass
+	def __init__(self, name: str, in_node: DnnNode, 
+			kernel: np.ndarray, strides: list, padding: str):
+		'''
+
+		@param ("SAME" | "VALID") padding
+		'''
+
+		self.in_node = in_node
+		self.kernel = kernel
+		self.strides = strides
+
+
+
+
+		self._notify_completion(name)
 
 	def run(self):
 		pass
 
+	def _stride(self):
+
+	def _pad(self, matrix: np.ndarray) -> np.ndarray:
+
+		return None
+
 class BiasAdd(DnnNode):
-	def __init__(self, name: str, in_node: np.ndarray, biases: np.ndarray):
-		self._verify_shapes(in_node, biases)
+	def __init__(self, name: str, in_node: DnnNode, biases: np.ndarray):
+		self._verify_shapes(in_node.result, biases)
 		self.in_node, self.biases = in_node, biases
 		self.result = None
 
 		self._notify_completion(name)
 
 	def run(self):
-		self.result = self.in_node + self.biases
+		self.result = self.in_node.result + self.biases
 
 class MaxPool2D(DnnNode):
 	def __init__(self, name, in_node, ksize, strides, padding):
@@ -162,13 +182,14 @@ class BatchNorm(DnnNode):
 		pass
 
 class LeakyReLU(DnnNode):
-	def __init__(self, name: str, in_node: np.ndarray):
+	def __init__(self, name: str, in_node: DnnNode):
 		self.in_node = in_node
 
 		self._notify_completion(name)
 
 	def run(self):
-		self.result = np.maximum(self.in_node, 0.1 * self.in_node)
+		value = self.in_node.result
+		self.result = np.maximum(value, 0.1 * value)
 
 
 
