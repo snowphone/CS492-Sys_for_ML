@@ -91,11 +91,23 @@ class DnnGraphBuilder(object):
 		return out_node
 
 class DnnNode(object):
-	def __init__(self):
-		pass
+	'''
+	This is an interface for layers
+	'''
+	def __init__(self, name: str):
+		'''
+		Construct the layer and print its name if correctly built
+		'''
+		self.name = name
 
 	def run(self):
+		'''
+		After invoking `DnnNode.run` method, `DnnNode.result` will contin the calculated value
+		'''
 		self.result = None 
+	
+	def _notify_completion(self):
+		print(self.name)
 
 #
 # Complete below classes.
@@ -130,11 +142,14 @@ class BatchNorm(DnnNode):
 		pass
 
 class LeakyReLU(DnnNode):
-	def __init__(self, name, in_node):
-		pass
+	def __init__(self, name: str, in_node: np.ndarray):
+		super().__init__(name)
+		self.in_node = in_node
+		self._notify_completion()
 
 	def run(self):
-		pass
+		self.result = np.maximum(self.in_node, 0.1 * self.in_node)
+
 
 
 # Do not modify below
