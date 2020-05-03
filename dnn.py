@@ -94,11 +94,11 @@ class DnnNode(object):
 	'''
 	This is an interface for layers
 	'''
-	def __init__(self, name: str):
+	def __init__(self):
 		'''
 		Construct the layer and print its name if correctly built
 		'''
-		self.name = name
+		pass
 
 	def run(self):
 		'''
@@ -106,8 +106,24 @@ class DnnNode(object):
 		'''
 		self.result = None 
 	
-	def _notify_completion(self):
-		print(self.name)
+	def _notify_completion(self, name: str):
+		'''
+		Print the given name.
+		Note that this is a private method and also it must be invoked only when construction is completed.
+		'''
+		print(name)
+
+	def _verify_shapes(self, lhs: np.ndarray, rhs: np.ndarray):
+		'''
+		Compare the shapes of given numpy arrays.
+		If the shape is not equal, then TypeError would be raised to interrupt the flow.
+
+		@throws TypeError
+		'''
+		if lhs.shape != rhs.shape:
+			className = self.__class__.__name__
+			raise TypeError("While constructing {}, lhs's shape {} != rhs's shape {}".format(className, lhs.shape, rhs.shape))
+
 
 #
 # Complete below classes.
@@ -121,11 +137,15 @@ class Conv2D(DnnNode):
 		pass
 
 class BiasAdd(DnnNode):
-	def __init__(self, name, in_node, biases):
-		pass
+	def __init__(self, name: str, in_node: np.ndarray, biases: np.ndarray):
+		self._verify_shapes(in_node, biases)
+		self.in_node, self.biases = in_node, biases
+		self.result = None
+
+		self._notify_completion(name)
 
 	def run(self):
-		pass
+		self.result = self.in_node + self.biases
 
 class MaxPool2D(DnnNode):
 	def __init__(self, name, in_node, ksize, strides, padding):
@@ -143,9 +163,9 @@ class BatchNorm(DnnNode):
 
 class LeakyReLU(DnnNode):
 	def __init__(self, name: str, in_node: np.ndarray):
-		super().__init__(name)
 		self.in_node = in_node
-		self._notify_completion()
+
+		self._notify_completion(name)
 
 	def run(self):
 		self.result = np.maximum(self.in_node, 0.1 * self.in_node)
