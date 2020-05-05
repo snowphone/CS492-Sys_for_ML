@@ -142,6 +142,10 @@ class DnnNode(object):
 		return np.moveaxis(chan_last, last_dim, 0)
 
 	def _stride(self, matrix: np.ndarray, n_filter: int, stride: int)->np.ndarray:
+		'''
+		@return np.ndarray shape: (out_n x out_n, tile)  => (n*n, f, f, c)
+		Tile means a local area of the matrix and its shape equals to the kernel.
+		'''
 		#strider = np.lib.stride_tricks.as_strided
 		formula = lambda x: (x - n_filter) // stride + 1
 		new_shape = (formula(matrix.shape[0]), formula(matrix.shape[1]), matrix.shape[2:])
@@ -197,7 +201,8 @@ class Conv2D(DnnNode):
 			raise DNNException("padding argument must be one of 'SAME' or 'VALID', not {}".format(padding))
 
 
-		assert strides[1] == strides[2]
+		if strides[1] != strides[2]:
+			raise DNNException("In this code, we assumed that vertical and horizontal stride step were same")
 		if padding.upper() == "SAME":
 			in_node.result = self._pad(in_node.result, kernels.shape[0], strides[1])
 
@@ -208,7 +213,24 @@ class Conv2D(DnnNode):
 		self._notify_completion(name)
 
 	def run(self):
-		pass
+		# Strategy 1: _stride => dot product => reshape
+		# Strategy 2: (outchan x kernel) @ (tile x strides).
+		#			each is a matrix and since kernel.length == tile.length matmul can be done!
+
+		# Strategy 2:
+		n_filter = self.kernels.shape[0]
+		stride = self.strides[1]
+		matrix = self.in_node.result
+
+		formula = lambda x: (x - n_filter) // stride + 1
+		new_shape = (formula(matrix.shape[0]), formula(matrix.shape[1]), matrix.shape[2:])
+
+		w_last_dim = self.kernels.shape[-1]
+		w = self.kernels.transpose(3, 0, 1, 2).reshape(w_last_dim, -1)
+		tmp_x = self._stride(matrix, n_filter, stride)
+		x = np.moveaxis(tmp_x, 0, len(tmp_x.shape) - 1) # Thus, ((f, f, c), out_n * out_n) is a logical shape.
+		self.result = w.dot(x).reshape(new_shape)
+		return
 
 class BiasAdd(DnnNode):
 	def __init__(self, name: str, in_node: DnnNode, biases: np.ndarray):
