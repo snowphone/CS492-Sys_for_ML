@@ -141,6 +141,32 @@ class DnnNode(object):
 		last_dim = len(chan_last.shape) - 1
 		return np.moveaxis(chan_last, last_dim, 0)
 
+	def _stride(self):
+		pass
+
+	def _pad(self, matrix: np.ndarray, n_filter: int, n_stride: int) -> np.ndarray:
+		'''
+		Insert a padding for the purpose of keeping the output's shape same.
+		For example, if the input is 3 x 5 shaped, then the result with padding is also 3 x 5.
+
+		@param np.ndarray matrix 
+		@param int n_filter The length of the filter. Assume that # of rows 
+			in the filter equals to # of the columns of the filter. 
+			In short, the filter is regarded as square.
+		@param int n_stride the stride step. It also assumes vertical step == horizontal step.
+		'''
+		
+		n_row, n_col = matrix.shape[:2]
+		v_pad = ((n_stride - 1) * n_row - 1 + n_filter) // 2
+		h_pad = ((n_stride - 1) * n_col - 1 + n_filter) // 2
+
+		pad = [(v_pad, v_pad), (h_pad, h_pad)]	# [(up, down), (left, right)]
+
+		matrix = np.pad(matrix, pad)
+
+		return matrix
+
+
 
 #
 # Complete below classes.
@@ -166,13 +192,6 @@ class Conv2D(DnnNode):
 
 	def run(self):
 		pass
-
-	def _stride(self):
-		pass
-
-	def _pad(self, matrix: np.ndarray) -> np.ndarray:
-
-		return None
 
 class BiasAdd(DnnNode):
 	def __init__(self, name: str, in_node: DnnNode, biases: np.ndarray):

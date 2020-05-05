@@ -55,6 +55,44 @@ class TestNode(unittest.TestCase):
 
 		np.testing.assert_array_equal(expected, result)
 
+	def test_pad(self):
+		'''Squared matrix'''
+		func = dnn.DnnNode()._pad
+		matrix = np.arange(15).reshape(5, 3)
+		n_f = 3
+		n_s = 1
+		expected = np.array([
+			[0, 0, 0, 0, 0],
+			[0, 0, 1, 2, 0],
+			[0, 3, 4, 5, 0],
+			[0, 6, 7, 8, 0],
+			[0, 9, 10, 11, 0],
+			[0, 12, 13, 14, 0],
+			[0, 0, 0, 0, 0]])
+		expected = expected + 0
+
+		actual = func(matrix, n_f, n_s)
+
+		np.testing.assert_array_equal(expected, actual)
+		
+	def test_pad2(self):
+		'''rectangled matrix'''
+		func = dnn.DnnNode()._pad
+		matrix = np.array([[1, 2, 3]])
+		n_f = 2
+		n_s = 2
+		expected = np.array([
+			[0, 0, 0, 0, 0, 0, 0],
+			[0, 0, 1, 2, 3, 0, 0],
+			[0, 0, 0, 0, 0, 0, 0],
+			])
+		expected = expected + 0
+
+		actual = func(matrix, n_f, n_s)
+
+		np.testing.assert_array_equal(expected, actual)
+		
+
 
 if __name__ == "__main__":
 	unittest.main()
