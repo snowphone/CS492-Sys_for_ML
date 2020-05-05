@@ -98,10 +98,10 @@ class TestNode(unittest.TestCase):
 		matrix = np.arange(4).reshape(2, 2)
 
 		stride = 1
-		n_filter = 1
+		ksize = 1
 		expected = np.array([[0], [1], [2], [3]])
 
-		actual = strider(matrix, n_filter, stride)
+		actual = strider(matrix, ksize, stride)
 		
 
 	def test_stride2(self):
@@ -110,13 +110,13 @@ class TestNode(unittest.TestCase):
 		matrix = np.arange(9).reshape(3, 3)
 
 		stride = 1
-		n_filter = 2
+		ksize = 2
 		expected = np.array([
 			[[0, 1], [3, 4]], [[1, 2], [4, 5]],
 			[[3, 4], [6, 7]], [[4, 5], [7, 8]]
 			])
 
-		actual = strider(matrix, n_filter, stride)
+		actual = strider(matrix, ksize, stride)
 		
 
 if __name__ == "__main__":
