@@ -1,8 +1,8 @@
 import os
 import sys
+import numpy as np
 import math
 import networkx as nx
-import numpy as np
 
 class DnnInferenceEngine(object):
 	def __init__(self, graph):
@@ -129,6 +129,18 @@ class DnnNode(object):
 			className = self.__class__.__name__
 			raise DNNException("While constructing {}, lhs's shape {} != rhs's shape {}".format(className, lhs.shape, rhs.shape))
 
+		return
+
+	def _make_channel_last(self, chan_first: np.ndarray)->np.ndarray:
+		chan_first = np.array(chan_first)
+		last_dim = len(chan_first.shape) - 1
+		return np.moveaxis(chan_first, 0, last_dim)
+
+	def _make_channel_first(self, chan_last: np.ndarray) -> np.ndarray:
+		chan_last = np.array(chan_last)
+		last_dim = len(chan_last.shape) - 1
+		return np.moveaxis(chan_last, last_dim, 0)
+
 
 #
 # Complete below classes.
@@ -164,14 +176,20 @@ class Conv2D(DnnNode):
 
 class BiasAdd(DnnNode):
 	def __init__(self, name: str, in_node: DnnNode, biases: np.ndarray):
-		self._verify_shapes(in_node.result, biases)
+		#self._verify_shapes(in_node.result, biases, dim=-1)
+		assert in_node.result.shape[-1] == biases.shape[0]
 		self.in_node, self.biases = in_node, biases
 		self.result = None
 
 		self._notify_completion(name)
 
 	def run(self):
-		self.result = self.in_node.result + self.biases
+		node = self.in_node.result
+		#node = self._make_channel_first(node)
+		#node = [n + bias for n, bias in zip(node, self.biases)]
+		#self.result = self._make_channel_last(node)
+		self.result = node + self.biases	# Same as the above theee lines, but it is much faster due to parallelism.
+
 
 class MaxPool2D(DnnNode):
 	def __init__(self, name, in_node, ksize, strides, padding):
