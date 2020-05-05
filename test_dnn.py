@@ -91,8 +91,33 @@ class TestNode(unittest.TestCase):
 		actual = func(matrix, n_f, n_s)
 
 		np.testing.assert_array_equal(expected, actual)
+	
+	def test_stride(self):
+		strider = dnn.DnnNode()._stride
+
+		matrix = np.arange(4).reshape(2, 2)
+
+		stride = 1
+		n_filter = 1
+		expected = np.array([[0], [1], [2], [3]])
+
+		actual = strider(matrix, n_filter, stride)
 		
 
+	def test_stride2(self):
+		strider = dnn.DnnNode()._stride
+
+		matrix = np.arange(9).reshape(3, 3)
+
+		stride = 1
+		n_filter = 2
+		expected = np.array([
+			[[0, 1], [3, 4]], [[1, 2], [4, 5]],
+			[[3, 4], [6, 7]], [[4, 5], [7, 8]]
+			])
+
+		actual = strider(matrix, n_filter, stride)
+		
 
 if __name__ == "__main__":
 	unittest.main()

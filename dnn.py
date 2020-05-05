@@ -90,7 +90,7 @@ class DnnGraphBuilder(object):
 		self.set_in_node(out_node)  # Assume there's only one input
 		return out_node
 
-class DNNException(Exception):
+class DNNException(AssertionError):
 	def __init__(self, msg):
 		super().__init__(msg)
 
@@ -141,8 +141,19 @@ class DnnNode(object):
 		last_dim = len(chan_last.shape) - 1
 		return np.moveaxis(chan_last, last_dim, 0)
 
-	def _stride(self):
-		pass
+	def _stride(self, matrix: np.ndarray, n_filter: int, stride: int)->np.ndarray:
+		#strider = np.lib.stride_tricks.as_strided
+		formula = lambda x: (x - n_filter) // stride + 1
+		new_shape = (formula(matrix.shape[0]), formula(matrix.shape[1]), matrix.shape[2:])
+		#matrix = strider(matrix, new_shape, [stride, stride])
+
+		# TODO: Parallelize!
+		tiles = np.array([matrix[r:r+n_filter, c:c+n_filter] 
+				for r in range(0, new_shape[0], stride) 
+				for c in range(0, new_shape[1], stride)
+				])
+
+		return tiles
 
 	def _pad(self, matrix: np.ndarray, n_filter: int, n_stride: int) -> np.ndarray:
 		'''
@@ -174,19 +185,25 @@ class DnnNode(object):
 
 class Conv2D(DnnNode):
 	def __init__(self, name: str, in_node: DnnNode, 
-			kernel: np.ndarray, strides: list, padding: str):
+			kernels: np.ndarray, strides: list, padding: str):
 		'''
 
 		@param ("SAME" | "VALID") padding
 		'''
+		# Need some verification codes...
+		if in_node.result.shape[-1] != kernels.shape[-2]:
+			raise DNNException("the number of output channels is different")
+		elif padding.upper() not in {"SAME", "VALID"}:
+			raise DNNException("padding argument must be one of 'SAME' or 'VALID', not {}".format(padding))
+
+
+		assert strides[1] == strides[2]
+		if padding.upper() == "SAME":
+			in_node.result = self._pad(in_node.result, kernels.shape[0], strides[1])
 
 		self.in_node = in_node
-		self.kernel = kernel
+		self.kernels = kernels
 		self.strides = strides
-
-		# Need some verification codes...
-
-
 
 		self._notify_completion(name)
 
@@ -196,7 +213,8 @@ class Conv2D(DnnNode):
 class BiasAdd(DnnNode):
 	def __init__(self, name: str, in_node: DnnNode, biases: np.ndarray):
 		#self._verify_shapes(in_node.result, biases, dim=-1)
-		assert in_node.result.shape[-1] == biases.shape[0]
+		if in_node.result.shape[-1] != biases.shape[0]:
+			raise DNNException("input's shape {} != biases.shape {}".format(in_node.result.shape[-1], biases.shape[0]))
 		self.in_node, self.biases = in_node, biases
 		self.result = None
 
