@@ -131,15 +131,17 @@ class DnnNode(object):
 
 		return
 
-	def _make_channel_last(self, chan_first: np.ndarray)->np.ndarray:
+	def _make_channel_last(self, chan_first: np.ndarray, has_batch=True)->np.ndarray:
 		chan_first = np.array(chan_first)
 		last_dim = len(chan_first.shape) - 1
-		return np.moveaxis(chan_first, 0, last_dim) # Or, you can implement using np.transpose
+		first_dim = 1 if has_batch else 0
+		return np.moveaxis(chan_first, first_dim, last_dim) # Or, you can implement using np.transpose
 
-	def _make_channel_first(self, chan_last: np.ndarray) -> np.ndarray:
+	def _make_channel_first(self, chan_last: np.ndarray, has_batch=True) -> np.ndarray:
 		chan_last = np.array(chan_last)
 		last_dim = len(chan_last.shape) - 1
-		return np.moveaxis(chan_last, last_dim, 0)
+		first_dim = 1 if has_batch else 0
+		return np.moveaxis(chan_last, last_dim, first_dim)
 
 	def _stride(self, matrix: np.ndarray, ksize: int, stride: int, pad_mode="constant")->np.ndarray:
 		'''
@@ -188,6 +190,8 @@ class DnnNode(object):
 		@params pad [(v_pad, v_pad), (h_pad, h_pad)] 
 				If pad is set, then ksize and n_stride are ignored.
 		'''
+		last_dim = len(matrix.shape)-1
+		matrix = self._make_channel_last(matrix, has_batch=False)
 		if pad is None:
 			n_row, n_col = matrix.shape[:2]
 			v_pad = ((n_stride - 1) * n_row - 1 + ksize) // 2
@@ -195,7 +199,12 @@ class DnnNode(object):
 
 			pad = [(v_pad, v_pad), (h_pad, h_pad)]	# [(up, down), (left, right)]
 
-		matrix = np.pad(matrix, pad, mode=mode)
+		pad = [*pad, (0, 0), (0, 0)]
+
+		matrix = np.pad(matrix, pad_width=pad, mode=mode)
+
+		matrix = self._make_channel_first(matrix, has_batch=False)
+
 
 		return matrix
 
@@ -267,8 +276,8 @@ class Conv2D(DnnNode):
 class BiasAdd(DnnNode):
 	def __init__(self, name: str, in_node: DnnNode, biases: np.ndarray):
 		#self._verify_shapes(in_node.result, biases, dim=-1)
-		if in_node.result.shape[-1] != biases.shape[0]:
-			raise DNNException("input's shape {} != biases.shape {}".format(in_node.result.shape[-1], biases.shape[0]))
+		if in_node.result.shape[-1] != biases.shape[-1]:
+			raise DNNException("input's shape {} != biases.shape {}".format(in_node.result.shape[-1], biases.shape[-1]))
 		self.in_node, self.biases = in_node, biases
 		self.result = None
 
@@ -297,6 +306,10 @@ class MaxPool2D(DnnNode):
 		if padding.upper() == "SAME":
 			in_node.result = self._pad(in_node.result, self.ksize, self.stride)
 
+
+		self._notify_completion(name)
+		return
+
 		
 	def run(self):
 		matrix = self.in_node.result
@@ -312,17 +325,37 @@ class MaxPool2D(DnnNode):
 		return
 
 class BatchNorm(DnnNode):
-	def __init__(self, name, in_node, mean, variance, gamma, epsilon):
-		pass
+	def __init__(self, name, in_node, mean, variance, gamma, epsilon, beta=0):
+
+		if not (in_node.result.shape[-1] == mean.shape[0]):
+			raise DNNException()
+		elif not (in_node.result.shape[-1] == variance.shape[0]):
+			raise DNNException()
+		elif not (in_node.result.shape[-1] == gamma.shape[0]):
+			raise DNNException()
+
+		self.in_node = in_node
+		self.mean = mean
+		self.variance = variance
+		self.gamma = gamma
+		self.epsilon = epsilon
+		self.beta = 0
+
+		self._notify_completion(name)
+		return
 
 	def run(self):
-		pass
+		matrix = in_node.result
+		x = (matrix - self.mean) / np.math.sqrt(self.variance + epsilon)
+		self.result = self.gamma * x + self.beta
+		return
 
 class LeakyReLU(DnnNode):
 	def __init__(self, name: str, in_node: DnnNode):
 		self.in_node = in_node
 
 		self._notify_completion(name)
+		return
 
 	def run(self):
 		value = self.in_node.result
