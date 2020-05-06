@@ -93,6 +93,9 @@ class TestNode(unittest.TestCase):
 		np.testing.assert_array_equal(expected, actual)
 	
 	def test_stride(self):
+		'''
+		1 x 1
+		'''
 		strider = dnn.DnnNode()._stride
 
 		matrix = np.arange(2 * 2).reshape(2, 2)
@@ -111,6 +114,9 @@ class TestNode(unittest.TestCase):
 		
 
 	def test_stride2(self):
+		'''
+		evenly divisible by ksize
+		'''
 		strider = dnn.DnnNode()._stride
 
 		matrix = np.arange(3*3).reshape(3, 3)
@@ -125,27 +131,30 @@ class TestNode(unittest.TestCase):
 		actual = strider(matrix, ksize, stride)
 		np.testing.assert_array_equal(expected, actual)
 
-	#def test_stride3(self):
-	#	strider = dnn.DnnNode()._stride
+	def test_stride3(self):
+		'''
+		In vertical view, not evenly divisible
+		'''
+		strider = dnn.DnnNode()._stride
 
-	#	matrix = np.array([
-	#		[20,  200,   -5,   23],
-	#		[-13,  134,  119,  100],
-	#		[120,   32,   49,   25],
-	#		[-120,   12,   9,   23],
-	#		[-57,   84,   19,   17],
-	#		])
+		matrix = np.array([
+			[20,  200,   -5,   23],
+			[-13,  134,  119,  100],
+			[120,   32,   49,   25],
+			[-120,   12,   9,   23],
+			[-57,   84,   19,   17],
+			])
 
-	#	stride = 2
-	#	ksize = 2
-	#	expected = np.array([
-	#		[[20, 200], [-13, 134]], [[-5, 23], [119, 100]],
-	#		[[120, 32], [-120, 12]], [[49, 25], [9, 23]],
-	#		[[-57, 84], [-57, 84]], [[19, 17], [19, 17]],
-	#		])
+		stride = 2
+		ksize = 2
+		expected = np.array([
+			[[20, 200], [-13, 134]], [[-5, 23], [119, 100]],
+			[[120, 32], [-120, 12]], [[49, 25], [9, 23]],
+			[[-57, 84], [-57, 84]], [[19, 17], [19, 17]],
+			])
 
-	#	actual = strider(matrix, ksize, stride)
-	#	np.testing.assert_array_equal(expected, actual)
+		actual = strider(matrix, ksize, stride, "edge")
+		np.testing.assert_array_equal(expected, actual)
 
 	def test_stride4(self):
 		strider = dnn.DnnNode()._stride
@@ -193,6 +202,30 @@ class TestNode(unittest.TestCase):
 
 		actual = pooler.result
 		np.testing.assert_array_equal(expected, actual)
+
+	#def test_maxpool2(self):
+	#	mat = np.array([
+	#		[20,  200,   -5,   23],
+	#		[-13,  134,  119,  100],
+	#		[120,   32,   49,   25],
+	#		[-120,   12,   9,   23],
+	#		[-57,   84,   19,   17],
+	#		])
+	#	mat = mat.reshape(*mat.shape, 1)
+	#	expected = np.array([
+	#		[200, 119],
+	#		[120, 49],
+	#		[84, 19],
+	#		])
+	#	expected = expected.reshape(*expected.shape, 1)
+	#	in_node = dnn.DnnNode()
+	#	in_node.result = mat
+
+	#	pooler = dnn.MaxPool2D("max_pool2d", in_node, [1,2,2,1], [1,2,2,1], "valid")
+	#	pooler.run()
+
+	#	actual = pooler.result
+	#	np.testing.assert_array_equal(expected, actual)
 
 
 if __name__ == "__main__":

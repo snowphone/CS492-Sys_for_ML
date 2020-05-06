@@ -141,44 +141,59 @@ class DnnNode(object):
 		last_dim = len(chan_last.shape) - 1
 		return np.moveaxis(chan_last, last_dim, 0)
 
-	def _stride(self, matrix: np.ndarray, ksize: int, stride: int)->np.ndarray:
+	def _stride(self, matrix: np.ndarray, ksize: int, stride: int, pad_mode="constant")->np.ndarray:
 		'''
+		TODO: Parallelize!
+
 		@return np.ndarray shape: (out_n x out_n, tile)  => (n*n, f, f, c)
 		Tile means a local area of the matrix and its shape equals to the kernel.
 		'''
 		#strider = np.lib.stride_tricks.as_strided
-		formula = lambda x: (x - ksize) // stride + 1
-		row, col, *depths = matrix.shape
-		new_shape = (formula(row), formula(col), *depths)
-		#matrix = strider(matrix, new_shape, [stride, stride])
 
-		# TODO: Parallelize!
+
+		row, col = matrix.shape[:2]
+		r_pad = ((stride - 1) * row - 1 + ksize) // 2
+		c_pad = ((stride - 1) * col - 1 + ksize) // 2
+
+		if pad_mode == "edge":
+			pad = [(0, r_pad), (0, c_pad)]
+			matrix = self._pad(matrix, ksize, stride, pad_mode, pad=pad)
+
+
+		
+		formula = lambda x: (x - ksize) // stride + 1
+		padded_row, padded_col = matrix.shape[:2]
+
+
 		tiles = np.array([matrix[r:r+ksize, c:c+ksize] 
-				for r in range(0, row, stride) 
-				for c in range(0, col, stride)
-				if r + ksize <=row and c + ksize <= col
-				])
+			for r in range(0, row, stride) 
+			for c in range(0, row, stride)
+			if r + ksize <=padded_row and c + ksize <= col
+			])
 
 		return tiles
 
-	def _pad(self, matrix: np.ndarray, ksize: int, n_stride: int, mode="constant") -> np.ndarray:
+	def _pad(self, matrix: np.ndarray, ksize: int, 
+			n_stride: int, mode="constant", *, pad=None) -> np.ndarray:
 		'''
 		Insert a padding for the purpose of keeping the output's shape same.
 		For example, if the input is 3 x 5 shaped, then the result with padding is also 3 x 5.
 
 		@params np.ndarray matrix 
-		@params int n_filter The length of the filter. Assume that # of rows 
+		@params int ksize The length of the filter. Assume that # of rows 
 			in the filter equals to # of the columns of the filter. 
 			In short, the filter is regarded as square.
 		@params int n_stride the stride step. It also assumes vertical step == horizontal step.
 		@params mode "constant" or "edge".
+		@params pad [(v_pad, v_pad), (h_pad, h_pad)] 
+				If pad is set, then ksize and n_stride are ignored.
 		'''
-		
-		n_row, n_col = matrix.shape[:2]
-		v_pad = ((n_stride - 1) * n_row - 1 + ksize) // 2
-		h_pad = ((n_stride - 1) * n_col - 1 + ksize) // 2
+		if pad is None:
+			n_row, n_col = matrix.shape[:2]
+			v_pad = ((n_stride - 1) * n_row - 1 + ksize) // 2
+			h_pad = ((n_stride - 1) * n_col - 1 + ksize) // 2
 
-		pad = [(v_pad, v_pad), (h_pad, h_pad)]	# [(up, down), (left, right)]
+			pad = [(v_pad, v_pad), (h_pad, h_pad)]	# [(up, down), (left, right)]
 
 		matrix = np.pad(matrix, pad, mode=mode)
 
