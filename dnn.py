@@ -150,7 +150,6 @@ class DnnNode(object):
 		formula = lambda x: (x - ksize) // stride + 1
 		row, col, *depths = matrix.shape
 		new_shape = (formula(row), formula(col), *depths)
-		print(f"new_shape: {new_shape}")
 		#matrix = strider(matrix, new_shape, [stride, stride])
 
 		# TODO: Parallelize!
@@ -284,16 +283,13 @@ class MaxPool2D(DnnNode):
 	def run(self):
 		matrix = self.in_node.result
 		formula = lambda x: (x - self.ksize) // self.stride + 1
-		sh0, sh1, *others = matrix.shape
-		new_shape = (formula(sh0), formula(sh1), *others)
+		row, col, *depths = matrix.shape
+		new_shape = (formula(row), formula(col), *depths)
 
 		tmp_x = self._stride(matrix, self.ksize, self.stride)
-		print(f"tmp x shape: {tmp_x.shape}, tmpx: {tmp_x}")
-		print("tmp x[0]", tmp_x[0])
-		x = self._make_channel_last(tmp_x)	# result: (f, f, c, out_n * out_n)
-		print(f"ksize: {self.ksize}, stride: {self.stride}", x)
-		self.result = x.max(axis=(0))
-		print(f"result: {self.result}")
+		x = self._make_channel_last(tmp_x)	# Result: (f, f, c, out_n * out_n)
+											# (f, f) is the tiled local matrix.
+		self.result = x.max(axis=(0, 1))	# Find a max value among (f, f) matrix elements
 		self.result = self.result.reshape(new_shape)
 		return
 

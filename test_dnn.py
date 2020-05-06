@@ -123,7 +123,6 @@ class TestNode(unittest.TestCase):
 			])
 
 		actual = strider(matrix, ksize, stride)
-		print(actual)
 		np.testing.assert_array_equal(expected, actual)
 
 	#def test_stride3(self):
@@ -171,28 +170,29 @@ class TestNode(unittest.TestCase):
 
 
 	
-	#def test_maxpool(self):
-	#	mat = np.array([
-	#		[20,  200,   -5,   23],
-	#		[-13,  134,  119,  100],
-	#		[120,   32,   49,   25],
-	#		[-120,   12,   9,   23],
-	#		#[-57,   84,   19,   17],
-	#		])
-	#	mat = mat.reshape(*mat.shape, 1)
-	#	expected = np.array([
-	#		[200, 119],
-	#		[120, 49],
-	#		#[84, 19],
-	#		])
-	#	in_node = dnn.DnnNode()
-	#	in_node.result = mat
+	def test_maxpool(self):
+		mat = np.array([
+			[20,  200,   -5,   23],
+			[-13,  134,  119,  100],
+			[120,   32,   49,   25],
+			[-120,   12,   9,   23],
+			#[-57,   84,   19,   17],
+			])
+		mat = mat.reshape(*mat.shape, 1)
+		expected = np.array([
+			[200, 119],
+			[120, 49],
+			#[84, 19],
+			])
+		expected = expected.reshape(*expected.shape, 1)
+		in_node = dnn.DnnNode()
+		in_node.result = mat
 
-	#	pooler = dnn.MaxPool2D("max_pool2d", in_node, [1,2,2,1], [1,2,2,1], "valid")
-	#	pooler.run()
+		pooler = dnn.MaxPool2D("max_pool2d", in_node, [1,2,2,1], [1,2,2,1], "valid")
+		pooler.run()
 
-	#	actual = pooler.result
-	#	np.testing.assert_array_equal(expected, actual)
+		actual = pooler.result
+		np.testing.assert_array_equal(expected, actual)
 
 
 if __name__ == "__main__":
