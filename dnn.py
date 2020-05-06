@@ -226,8 +226,8 @@ class Conv2D(DnnNode):
 		@param ("SAME" | "VALID") padding
 		'''
 		# Need some verification codes...
-		if in_node.result.shape[-1] != kernels.shape[-2]:
-			raise DNNException("the number of output channels is different")
+		#if in_node.result.shape[-1] != kernels.shape[-2]:
+		#	raise DNNException("the number of output channels is different")
 		self._check_quadruple(strides)
 		self._check_padding(padding)
 
@@ -250,14 +250,17 @@ class Conv2D(DnnNode):
 		# Strategy 2:
 		matrix = self.in_node.result
 
-		formula = lambda x: (x - self.ksize) // self.stride + 1
-		row, col, *depths = matrix.shape
-		new_shape = (formula(row), formula(col), *depths)
+		n_outchan = self.kernels.shape[-1]
+		w = self._make_channel_first(self.kernels).reshape(n_outchan, -1)
 
-		w_last_dim = self.kernels.shape[-1]
-		w = self._make_channel_first(self.kernels).reshape(w_last_dim, -1)
 		tmp_x = self._stride(matrix, self.ksize, self.stride)
-		x = self._make_channel_last(tmp_x)	# Thus, ((f, f, c), out_n * out_n) is a logical shape.
+		tmp_x = tmp_x.reshape(tmp_x.shape[0], -1)	# (out_n * out_n, f*f*c)
+		x = self._make_channel_last(tmp_x)			# (f*f*c, out_n * out_n)
+
+		formula = lambda x: (x - self.ksize) // self.stride + 1
+		row, col = matrix.shape[:2]
+		new_shape = (formula(row), formula(col), n_outchan)
+
 		self.result = w.dot(x).reshape(new_shape)
 		return
 
