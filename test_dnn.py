@@ -216,7 +216,7 @@ class TestNode(unittest.TestCase):
 		np.testing.assert_array_equal(expected, actual)
 
 	
-	def test_maxpool(self):
+	def test_maxpool_valid(self):
 		mat = np.array([
 			[20,  200,   -5,   23],
 			[-13,  134,  119,  100],
@@ -235,6 +235,27 @@ class TestNode(unittest.TestCase):
 
 		actual = pooler.result
 		np.testing.assert_array_equal(expected, actual)
+
+	#def test_maxpool_same(self):
+	#	mat = np.array([
+	#		[20,  200,   -5,   23, 1],
+	#		[-13,  134,  119,  100, -1],
+	#		[120,   32,   49,   25, 28],
+	#		[-120,   12,   9,   23, -123],
+	#		])[np.newaxis, :, :, np.newaxis]
+	#	expected = np.array([
+	#		[200, 119, 1],
+	#		[120, 49, 28],
+	#		])[np.newaxis, :, :, np.newaxis]
+	#	in_node = dnn.DnnNode()
+	#	in_node.result = mat
+
+	#	pooler = dnn.MaxPool2D("max_pool2d", in_node, [1,2,2,1], [1,2,2,1], "same")
+	#	pooler.run()
+
+	#	actual = pooler.result
+	#	np.testing.assert_array_equal(expected, actual)
+
 
 	
 if __name__ == "__main__":

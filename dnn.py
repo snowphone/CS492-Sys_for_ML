@@ -339,22 +339,31 @@ class MaxPool2D(DnnNode):
 		
 	def run(self):
 		matrix = self.in_node.result
+		n_batch, row, col, *depths = matrix.shape
+
 
 		if self.padding.upper() == "SAME":
-			matrix  = self._pad(matrix, self.ksize, self.stride)
+			r_pad = ((self.stride - 1) * row - 1 + self.ksize) // 2
+			c_pad = ((self.stride - 1) * col - 1 + self.ksize) // 2
+			pad = [(0, 0), (0, r_pad), (0, c_pad), (0, 0)]
 
+			matrix  = self._pad(matrix, self.ksize, self.stride, "edge", pad=pad)
 
-		#matrix = self._make_channel_last(matrix, has_batch=False)
-
-		formula = lambda x: (x - self.ksize) // self.stride + 1
-		n_batch, row, col, *depths = matrix.shape
-		new_shape = (n_batch, formula(row), formula(col), *depths)
+		def formula(x):
+			ret = ((x - self.ksize) // self.stride + 1)
+			if self.padding.upper() == "SAME":
+				return ret // self.stride
+			else:
+				return ret
 
 		tmp_x = self._stride(matrix, self.ksize, self.stride)
 		x = self._make_channel_last(tmp_x)	# Result: (batch, f, f, c, out_n * out_n)
 											# (f, f) is the tiled local matrix.
 		self.result = x.max(axis=(1, 2))	# Find a max value among (f, f) matrix elements
-		self.result = self.result.reshape(new_shape)
+		new_shape = (n_batch, *depths, formula(row), formula(col))
+		print(f"result: {self.result.shape}")
+		print(f"new shape: {new_shape}")
+		self.result = self.result.reshape(new_shape).transpose(0, 2, 3, 1)
 		return
 
 class BatchNorm(DnnNode):
