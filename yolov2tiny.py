@@ -178,54 +178,54 @@ def postprocessing(predictions):
 	return label_boxes
 
 def iou(boxA,boxB):
-  # boxA = boxB = [x1,y1,x2,y2]
+	# boxA = boxB = [x1,y1,x2,y2]
 
-  # Determine the coordinates of the intersection rectangle
-  xA = max(boxA[0], boxB[0])
-  yA = max(boxA[1], boxB[1])
-  xB = min(boxA[2], boxB[2])
-  yB = min(boxA[3], boxB[3])
+	# Determine the coordinates of the intersection rectangle
+	xA = max(boxA[0], boxB[0])
+	yA = max(boxA[1], boxB[1])
+	xB = min(boxA[2], boxB[2])
+	yB = min(boxA[3], boxB[3])
 
-  # Compute the area of intersection
-  intersection_area = (xB - xA + 1) * (yB - yA + 1)
+	# Compute the area of intersection
+	intersection_area = (xB - xA + 1) * (yB - yA + 1)
 
-  # Compute the area of both rectangles
-  boxA_area = (boxA[2] - boxA[0] + 1) * (boxA[3] - boxA[1] + 1)
-  boxB_area = (boxB[2] - boxB[0] + 1) * (boxB[3] - boxB[1] + 1)
+	# Compute the area of both rectangles
+	boxA_area = (boxA[2] - boxA[0] + 1) * (boxA[3] - boxA[1] + 1)
+	boxB_area = (boxB[2] - boxB[0] + 1) * (boxB[3] - boxB[1] + 1)
 
-  # Compute the IOU
-  iou = intersection_area / float(boxA_area + boxB_area - intersection_area)
+	# Compute the IOU
+	iou = intersection_area / float(boxA_area + boxB_area - intersection_area)
 
-  return iou
+	return iou
 
 def non_maximal_suppression(thresholded_predictions, iou_threshold):
 
-  nms_predictions = []
+	nms_predictions = []
+	
+	# Add the best B-Box because it will never be deleted
+	nms_predictions.append(thresholded_predictions[0])
+	
+	# For each B-Box (starting from the 2nd) check its iou with the higher score B-Boxes
+	# thresholded_predictions[i][0] = [x1,y1,x2,y2]
+	i = 1
+	while i < len(thresholded_predictions):
+		n_boxes_to_check = len(nms_predictions)
+		#print('N boxes to check = {}'.format(n_boxes_to_check))
+		to_delete = False
+	
+		j = 0
+		while j < n_boxes_to_check:
+			curr_iou = iou(thresholded_predictions[i][0],nms_predictions[j][0])
+			if(curr_iou > iou_threshold ):
+				to_delete = True
+			#print('Checking box {} vs {}: IOU = {} , To delete = {}'.format(thresholded_predictions[i][0],nms_predictions[j][0],curr_iou,to_delete))
+			j = j+1
+	
+		if to_delete == False:
+			nms_predictions.append(thresholded_predictions[i])
+		i = i+1
 
-  # Add the best B-Box because it will never be deleted
-  nms_predictions.append(thresholded_predictions[0])
-
-  # For each B-Box (starting from the 2nd) check its iou with the higher score B-Boxes
-  # thresholded_predictions[i][0] = [x1,y1,x2,y2]
-  i = 1
-  while i < len(thresholded_predictions):
-	n_boxes_to_check = len(nms_predictions)
-	#print('N boxes to check = {}'.format(n_boxes_to_check))
-	to_delete = False
-
-	j = 0
-	while j < n_boxes_to_check:
-		curr_iou = iou(thresholded_predictions[i][0],nms_predictions[j][0])
-		if(curr_iou > iou_threshold ):
-			to_delete = True
-		#print('Checking box {} vs {}: IOU = {} , To delete = {}'.format(thresholded_predictions[i][0],nms_predictions[j][0],curr_iou,to_delete))
-		j = j+1
-
-	if to_delete == False:
-		nms_predictions.append(thresholded_predictions[i])
-	i = i+1
-
-  return nms_predictions
+	return nms_predictions
 
 def sigmoid(x):
 	return 1 / (1 + np.e ** -x)

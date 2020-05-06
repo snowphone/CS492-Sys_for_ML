@@ -147,18 +147,20 @@ class DnnNode(object):
 		'''
 		TODO: Parallelize!
 
-		@return np.ndarray shape: (out_n x out_n, tile)  => (n*n, f, f, c)
+		@return np.ndarray shape: (batch, out_n x out_n, tile)  => (batch, n*n, f, f, c)
 		Tile means a local area of the matrix and its shape equals to the kernel.
 		'''
 		#strider = np.lib.stride_tricks.as_strided
 
 
-		row, col = matrix.shape[:2]
+		row, col = matrix.shape[1:3]
 		r_pad = ((stride - 1) * row - 1 + ksize) // 2
 		c_pad = ((stride - 1) * col - 1 + ksize) // 2
 		if pad_mode == "edge":
 			pad = [(0, r_pad), (0, c_pad)]
 			matrix = self._pad(matrix, ksize, stride, pad_mode, pad=pad)
+
+		matrix = self._make_channel_last(matrix, has_batch=False)
 
 
 		
@@ -166,12 +168,15 @@ class DnnNode(object):
 		padded_row, padded_col = matrix.shape[:2]
 
 
-		tiles = np.array([matrix[r:r+ksize, c:c+ksize] 
+		tiles = np.array([
+			matrix[r:r+ksize, c:c+ksize]
 			for r in range(0, row, stride) 
 			for c in range(0, row, stride)
 			if r != row and c != col and 
 				r + ksize <=padded_row and c + ksize <= padded_col
 			])
+
+		tiles = self._make_channel_first(tiles, has_batch=False)
 
 		return tiles
 
@@ -190,7 +195,6 @@ class DnnNode(object):
 		@params pad [(v_pad, v_pad), (h_pad, h_pad)] 
 				If pad is set, then ksize and n_stride are ignored.
 		'''
-		last_dim = len(matrix.shape)-1
 		matrix = self._make_channel_last(matrix, has_batch=False)
 		if pad is None:
 			n_row, n_col = matrix.shape[:2]
@@ -199,7 +203,7 @@ class DnnNode(object):
 
 			pad = [(v_pad, v_pad), (h_pad, h_pad)]	# [(up, down), (left, right)]
 
-		pad = [*pad, (0, 0), (0, 0)]
+		pad = [*pad, (0, 0), (0, 0)]	# First zeroes are for channels, seconds are for batches
 
 		matrix = np.pad(matrix, pad_width=pad, mode=mode)
 
@@ -244,9 +248,7 @@ class Conv2D(DnnNode):
 		self.stride = strides[1]
 		self.in_node = in_node
 		self.kernels = kernels
-
-		if padding.upper() == "SAME":
-			self.in_node.result = self._pad(self.in_node.result, self.ksize, self.stride)
+		self.padding = padding
 
 
 		self._notify_completion(name)
@@ -254,30 +256,40 @@ class Conv2D(DnnNode):
 	def run(self):
 		# Strategy 1: _stride => dot product => reshape
 		# Strategy 2: (outchan x kernel) @ (tile x strides).
-		#			each is a matrix and since kernel.length == tile.length matmul can be done!
+		#			each is a matrix and since kernel.length == tile.length matmul can be applied!
 
 		# Strategy 2:
 		matrix = self.in_node.result
 
-		n_outchan = self.kernels.shape[-1]
-		w = self._make_channel_first(self.kernels).reshape(n_outchan, -1)
+		if self.padding.upper() == "SAME":
+			matrix = self._pad(matrix, self.ksize, self.stride)
 
+
+		n_outchan = self.kernels.shape[-1]
+		w = self._make_channel_first(self.kernels, has_batch=False)
+		w = w.reshape(n_outchan, -1)	# (out_chan, f * f * c)
+
+
+		n_batch = matrix.shape[0]
 		tmp_x = self._stride(matrix, self.ksize, self.stride)
-		tmp_x = tmp_x.reshape(tmp_x.shape[0], -1)	# (out_n * out_n, f*f*c)
-		x = self._make_channel_last(tmp_x)			# (f*f*c, out_n * out_n)
+		tmp_x = tmp_x.reshape(n_batch, tmp_x.shape[1], -1)	# (n_batch, out_n * out_n, f*f*c)
+		x = tmp_x.transpose(2, 1, 0)		# (f*f*c, out_n * out_n, batch)
+		x = x.reshape(x.shape[0], -1)		# (f*f*c, out_n * out_n * batch)
+
 
 		formula = lambda x: (x - self.ksize) // self.stride + 1
 		row, col = matrix.shape[:2]
-		new_shape = (formula(row), formula(col), n_outchan)
+		new_shape = (formula(row), formula(col), n_outchan, n_batch)
 
 		self.result = w.dot(x).reshape(new_shape)
+		self.result = self._make_channel_first(self.result, has_batch=False)
 		return
 
 class BiasAdd(DnnNode):
 	def __init__(self, name: str, in_node: DnnNode, biases: np.ndarray):
 		#self._verify_shapes(in_node.result, biases, dim=-1)
-		if in_node.result.shape[-1] != biases.shape[-1]:
-			raise DNNException("input's shape {} != biases.shape {}".format(in_node.result.shape[-1], biases.shape[-1]))
+		#if in_node.result.shape[-1] != biases.shape[-1]:
+		#	raise DNNException("input's shape {} != biases.shape {}".format(in_node.result.shape[-1], biases.shape[-1]))
 		self.in_node, self.biases = in_node, biases
 		self.result = None
 
@@ -302,9 +314,7 @@ class MaxPool2D(DnnNode):
 		self.in_node = in_node
 		self.ksize = ksize[1]
 		self.stride = strides[1]
-
-		if padding.upper() == "SAME":
-			in_node.result = self._pad(in_node.result, self.ksize, self.stride)
+		self.padding = padding
 
 
 		self._notify_completion(name)
@@ -313,26 +323,33 @@ class MaxPool2D(DnnNode):
 		
 	def run(self):
 		matrix = self.in_node.result
+
+		if self.padding.upper() == "SAME":
+			matrix  = self._pad(matrix, self.ksize, self.stride)
+
+
+		#matrix = self._make_channel_last(matrix, has_batch=False)
+
 		formula = lambda x: (x - self.ksize) // self.stride + 1
-		row, col, *depths = matrix.shape
-		new_shape = (formula(row), formula(col), *depths)
+		n_batch, row, col, *depths = matrix.shape
+		new_shape = (n_batch, formula(row), formula(col), *depths)
 
 		tmp_x = self._stride(matrix, self.ksize, self.stride)
-		x = self._make_channel_last(tmp_x)	# Result: (f, f, c, out_n * out_n)
+		x = self._make_channel_last(tmp_x)	# Result: (batch, f, f, c, out_n * out_n)
 											# (f, f) is the tiled local matrix.
-		self.result = x.max(axis=(0, 1))	# Find a max value among (f, f) matrix elements
+		self.result = x.max(axis=(1, 2))	# Find a max value among (f, f) matrix elements
 		self.result = self.result.reshape(new_shape)
 		return
 
 class BatchNorm(DnnNode):
 	def __init__(self, name, in_node, mean, variance, gamma, epsilon, beta=0):
 
-		if not (in_node.result.shape[-1] == mean.shape[0]):
-			raise DNNException()
-		elif not (in_node.result.shape[-1] == variance.shape[0]):
-			raise DNNException()
-		elif not (in_node.result.shape[-1] == gamma.shape[0]):
-			raise DNNException()
+		#if not (in_node.result.shape[-1] == mean.shape[0]):
+		#	raise DNNException()
+		#elif not (in_node.result.shape[-1] == variance.shape[0]):
+		#	raise DNNException()
+		#elif not (in_node.result.shape[-1] == gamma.shape[0]):
+		#	raise DNNException()
 
 		self.in_node = in_node
 		self.mean = mean
@@ -345,8 +362,8 @@ class BatchNorm(DnnNode):
 		return
 
 	def run(self):
-		matrix = in_node.result
-		x = (matrix - self.mean) / np.math.sqrt(self.variance + epsilon)
+		matrix = self.in_node.result
+		x = (matrix - self.mean) / np.sqrt(self.variance + self.epsilon)
 		self.result = self.gamma * x + self.beta
 		return
 

@@ -95,150 +95,146 @@ class TestNode(unittest.TestCase):
 
 		np.testing.assert_array_equal(expected, actual)
 	
-	#def test_stride_basic(self):
-	#	'''
-	#	1 x 1
-	#	'''
-	#	strider = dnn.DnnNode()._stride
+	def test_stride_basic(self):
+		'''
+		1 x 1
+		'''
+		strider = dnn.DnnNode()._stride
 
-	#	matrix = np.arange(2 * 2).reshape(2, 2)
+		matrix = np.arange(2 * 2).reshape(2, 2)[np.newaxis, :, :, np.newaxis]
 
-	#	stride = 1
-	#	ksize = 1
-	#	expected = np.array([
-	#		[[0]], 
-	#		[[1]], 
-	#		[[2]], 
-	#		[[3]]
-	#		])
+		stride = 1
+		ksize = 1
+		expected = np.array([
+			[[0, ], ], 
+			[[1, ], ], 
+			[[2, ], ], 
+			[[3, ], ],
+			])[np.newaxis, :, :, np.newaxis]
 
-	#	actual = strider(matrix, ksize, stride)
-	#	np.testing.assert_array_equal(expected, actual)
-	#	
+		actual = strider(matrix, ksize, stride)
+		np.testing.assert_array_equal(expected, actual)
+		
 
-	#def test_stride_even(self):
-	#	'''
-	#	evenly divisible by ksize
-	#	'''
-	#	strider = dnn.DnnNode()._stride
+	def test_stride_even(self):
+		'''
+		evenly divisible by ksize
+		'''
+		strider = dnn.DnnNode()._stride
 
-	#	matrix = np.arange(3*3).reshape(3, 3)
+		matrix = np.arange(3*3).reshape(3, 3)[np.newaxis, :, :, np.newaxis]
 
-	#	ksize = 2
-	#	stride = 1
-	#	expected = np.array([
-	#		[[0, 1], [3, 4]], [[1, 2], [4, 5]],
-	#		[[3, 4], [6, 7]], [[4, 5], [7, 8]]
-	#		])
+		ksize = 2
+		stride = 1
+		expected = np.array([
+			[[0, 1], [3, 4]], [[1, 2], [4, 5]],
+			[[3, 4], [6, 7]], [[4, 5], [7, 8]]
+			])[np.newaxis, :, :, :, np.newaxis]
 
-	#	actual = strider(matrix, ksize, stride)
-	#	np.testing.assert_array_equal(expected, actual)
+		actual = strider(matrix, ksize, stride)
+		np.testing.assert_array_equal(expected, actual)
 
-	#def test_stride_vertical_not_even(self):
-	#	'''
-	#	In vertical order, not evenly divisible
-	#	'''
-	#	strider = dnn.DnnNode()._stride
+	def test_stride_vertical_not_even(self):
+		'''
+		In vertical order, not evenly divisible
+		'''
+		strider = dnn.DnnNode()._stride
 
-	#	matrix = np.array([
-	#		[20,  200,   -5,   23],
-	#		[-13,  134,  119,  100],
-	#		[120,   32,   49,   25],
-	#		[-120,   12,   9,   23],
-	#		[-57,   84,   19,   17],
-	#		])
+		matrix = np.array([
+			[20,  200,   -5,   23],
+			[-13,  134,  119,  100],
+			[120,   32,   49,   25],
+			[-120,   12,   9,   23],
+			[-57,   84,   19,   17],
+			])[np.newaxis, :, :, np.newaxis]
 
-	#	stride = 2
-	#	ksize = 2
-	#	expected = np.array([
-	#		[[20, 200], [-13, 134]], [[-5, 23], [119, 100]],
-	#		[[120, 32], [-120, 12]], [[49, 25], [9, 23]],
-	#		[[-57, 84], [-57, 84]], [[19, 17], [19, 17]],
-	#		])
+		stride = 2
+		ksize = 2
+		expected = np.array([
+			[[20, 200], [-13, 134]], [[-5, 23], [119, 100]],
+			[[120, 32], [-120, 12]], [[49, 25], [9, 23]],
+			[[-57, 84], [-57, 84]], [[19, 17], [19, 17]],
+			])[np.newaxis, :, :, :, np.newaxis]
 
-	#	actual = strider(matrix, ksize, stride, "edge")
-	#	np.testing.assert_array_equal(expected, actual)
-
-
-	#def test_stride_all_not_even(self):
-	#	'''
-	#	In vertical and horizontal order, not evenly divisible
-	#	'''
-	#	strider = dnn.DnnNode()._stride
-
-	#	matrix = np.array([
-	#		[20,  200,   -5,   23, 7],
-	#		[-13,  134,  119,  100, 8],
-	#		[120,   32,   49,   25, 12],
-	#		[-120,   12,   9,   23, 15],
-	#		[-57,   84,   19,   17, 82],
-	#		])
-
-	#	stride = 2
-	#	ksize = 2
-	#	expected = np.array([
-	#		[[20, 200], [-13, 134]], [[-5, 23], [119, 100]], [[7, 7], [8, 8]],
-	#		[[120, 32], [-120, 12]], [[49, 25], [9, 23]], [[12, 12], [15, 15]],
-	#		[[-57, 84], [-57, 84]], [[19, 17], [19, 17]], [[82, 82], [82, 82]],
-	#		])
-
-	#	actual = strider(matrix, ksize, stride, "edge")
-	#	np.testing.assert_array_equal(expected, actual)
+		actual = strider(matrix, ksize, stride, "edge")
+		np.testing.assert_array_equal(expected, actual)
 
 
-	#def test_conv(self):
-	#	mat = np.array([
-	#		[1, 1, 1, 0, 0],
-	#		[0, 1, 1, 1, 0], 
-	#		[0, 0, 1, 1, 1],
-	#		[0, 0, 1, 1, 0],
-	#		[0, 1, 1, 0, 0],
-	#		])
-	#	mat = mat[:, :, np.newaxis]
+	def test_stride_all_not_even(self):
+		'''
+		In vertical and horizontal order, not evenly divisible
+		'''
+		strider = dnn.DnnNode()._stride
 
-	#	kernels = np.array([
-	#		[1, 0, 1],
-	#		[0, 1, 0],
-	#		[1, 0, 1],
-	#		])
-	#	kernels  = kernels[:, :, np.newaxis, np.newaxis]
+		matrix = np.array([
+			[20,  200,   -5,   23, 7],
+			[-13,  134,  119,  100, 8],
+			[120,   32,   49,   25, 12],
+			[-120,   12,   9,   23, 15],
+			[-57,   84,   19,   17, 82],
+			])[np.newaxis, :, :, np.newaxis]
 
-	#	expected = np.array([
-	#		[4,3,4],
-	#		[2,4,3],
-	#		[2,3,4],
-	#		])
-	#	expected = expected[:, :, np.newaxis]
+		stride = 2
+		ksize = 2
+		expected = np.array([
+			[[20, 200], [-13, 134]], [[-5, 23], [119, 100]], [[7, 7], [8, 8]],
+			[[120, 32], [-120, 12]], [[49, 25], [9, 23]], [[12, 12], [15, 15]],
+			[[-57, 84], [-57, 84]], [[19, 17], [19, 17]], [[82, 82], [82, 82]],
+			])[np.newaxis, :, :, :, np.newaxis]
 
-	#	in_node = dnn.DnnNode()
-	#	in_node.result = mat
-	#	conv = dnn.Conv2D("conv2d", in_node, kernels, [1,1,1,1], "valid")
-	#	conv.run()
+		actual = strider(matrix, ksize, stride, "edge")
+		np.testing.assert_array_equal(expected, actual)
 
-	#	actual = conv.result
-	#	np.testing.assert_array_equal(expected, actual)
 
-	#
-	#def test_maxpool(self):
-	#	mat = np.array([
-	#		[20,  200,   -5,   23],
-	#		[-13,  134,  119,  100],
-	#		[120,   32,   49,   25],
-	#		[-120,   12,   9,   23],
-	#		])
-	#	mat = mat[np.newaxis, :, :, np.newaxis]
-	#	expected = np.array([
-	#		[200, 119],
-	#		[120, 49],
-	#		])[np.newaxis, :, :, np.newaxis]
-	#	in_node = dnn.DnnNode()
-	#	in_node.result = mat
+	def test_conv(self):
+		mat = np.array([
+			[1, 1, 1, 0, 0],
+			[0, 1, 1, 1, 0], 
+			[0, 0, 1, 1, 1],
+			[0, 0, 1, 1, 0],
+			[0, 1, 1, 0, 0],
+			])[np.newaxis, :, :, np.newaxis]
 
-	#	pooler = dnn.MaxPool2D("max_pool2d", in_node, [1,2,2,1], [1,2,2,1], "valid")
-	#	pooler.run()
+		kernels = np.array([
+			[1, 0, 1],
+			[0, 1, 0],
+			[1, 0, 1],
+			])[:, :, np.newaxis, np.newaxis]
 
-	#	actual = pooler.result
-	#	np.testing.assert_array_equal(expected, actual)
+		expected = np.array([
+			[4,3,4],
+			[2,4,3],
+			[2,3,4],
+			])[np.newaxis, :, :, np.newaxis]
+
+		in_node = dnn.DnnNode()
+		in_node.result = mat
+		conv = dnn.Conv2D("conv2d", in_node, kernels, [1,1,1,1], "valid")
+		conv.run()
+
+		actual = conv.result
+		np.testing.assert_array_equal(expected, actual)
+
+	
+	def test_maxpool(self):
+		mat = np.array([
+			[20,  200,   -5,   23],
+			[-13,  134,  119,  100],
+			[120,   32,   49,   25],
+			[-120,   12,   9,   23],
+			])[np.newaxis, :, :, np.newaxis]
+		expected = np.array([
+			[200, 119],
+			[120, 49],
+			])[np.newaxis, :, :, np.newaxis]
+		in_node = dnn.DnnNode()
+		in_node.result = mat
+
+		pooler = dnn.MaxPool2D("max_pool2d", in_node, [1,2,2,1], [1,2,2,1], "valid")
+		pooler.run()
+
+		actual = pooler.result
+		np.testing.assert_array_equal(expected, actual)
 
 	
 if __name__ == "__main__":
