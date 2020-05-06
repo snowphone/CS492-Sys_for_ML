@@ -135,13 +135,13 @@ class DnnNode(object):
 		chan_first = np.array(chan_first)
 		last_dim = len(chan_first.shape) - 1
 		first_dim = 1 if has_batch else 0
-		return np.swapaxes(chan_first, first_dim, last_dim) # Or, you can implement using np.transpose
+		return np.moveaxis(chan_first, first_dim, last_dim) # Or, you can implement using np.transpose
 
 	def _make_channel_first(self, chan_last: np.ndarray, has_batch=True) -> np.ndarray:
 		chan_last = np.array(chan_last)
 		last_dim = len(chan_last.shape) - 1
 		first_dim = 1 if has_batch else 0
-		return np.swapaxes(chan_last, last_dim, first_dim)
+		return np.moveaxis(chan_last, last_dim, first_dim)
 
 	def _stride(self, matrix: np.ndarray, ksize: int, stride: int, pad_mode="constant")->np.ndarray:
 		'''
@@ -250,7 +250,7 @@ class Conv2D(DnnNode):
 		self.kernels = kernels
 		self.padding = padding
 
-
+		self.name = name
 		self._notify_completion(name)
 
 	def run(self):
@@ -259,30 +259,46 @@ class Conv2D(DnnNode):
 		#			each is a matrix and since kernel.length == tile.length matmul can be applied!
 
 		# Strategy 2:
+		#print(" {}.run ".format(self.name).center(30, '@'))
+		#print(f"ksize: {self.ksize}, stride: {self.stride}")
 		matrix = self.in_node.result
 
+		#print(matrix.shape)
 		if self.padding.upper() == "SAME":
 			matrix = self._pad(matrix, self.ksize, self.stride)
+		#print(matrix.shape)
 
 
+		#print(" weight ".center(30, '@'))
 		n_outchan = self.kernels.shape[-1]
 		w = self._make_channel_first(self.kernels, has_batch=False)
+		#print(w.shape)
 		w = w.reshape(n_outchan, -1)	# (out_chan, f * f * c)
+		#print(w.shape)
 
 
+		#print(" input ".center(30, '@'))
 		n_batch = matrix.shape[0]
+		#print(matrix.shape)
 		tmp_x = self._stride(matrix, self.ksize, self.stride)
+		#print(tmp_x.shape)
 		tmp_x = tmp_x.reshape(n_batch, tmp_x.shape[1], -1)	# (n_batch, out_n * out_n, f*f*c)
+		#print(tmp_x.shape)
+		tmp_x = tmp_x.reshape(n_batch, tmp_x.shape[1], -1)	# (n_batch, out_n * out_n, f*f*c)
+		#print(tmp_x.shape)
 		x = tmp_x.transpose(2, 1, 0)		# (f*f*c, out_n * out_n, batch)
+		#print(x.shape)
 		x = x.reshape(x.shape[0], -1)		# (f*f*c, out_n * out_n * batch)
+		#print(x.shape)
 
 
 		formula = lambda x: (x - self.ksize) // self.stride + 1
-		row, col = matrix.shape[:2]
-		new_shape = (formula(row), formula(col), n_outchan, n_batch)
+		row, col = matrix.shape[1:3]
+		#print(f"row: {row}, col: {col}")
+		new_shape = (n_outchan, formula(row), formula(col), n_batch)
 
-		self.result = w.dot(x).reshape(new_shape)
-		self.result = self._make_channel_first(self.result, has_batch=False)
+		self.result = w.dot(x).reshape(new_shape)	# (out_chan, out_n, out_n * batch)
+		self.result = self.result.transpose(3, 1, 2, 0)
 		return
 
 class BiasAdd(DnnNode):
