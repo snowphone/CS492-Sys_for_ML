@@ -131,17 +131,30 @@ class DnnNode(object):
 
 		return
 
-	def _make_channel_last(self, chan_first: np.ndarray, has_batch=True)->np.ndarray:
+	@staticmethod
+	def _make_channel_last(chan_first: np.ndarray, has_batch=True)->np.ndarray:
 		chan_first = np.array(chan_first)
 		last_dim = len(chan_first.shape) - 1
 		first_dim = 1 if has_batch else 0
 		return np.moveaxis(chan_first, first_dim, last_dim) # Or, you can implement using np.transpose
 
-	def _make_channel_first(self, chan_last: np.ndarray, has_batch=True) -> np.ndarray:
+	@staticmethod
+	def _make_channel_first(chan_last: np.ndarray, has_batch=True) -> np.ndarray:
 		chan_last = np.array(chan_last)
 		last_dim = len(chan_last.shape) - 1
 		first_dim = 1 if has_batch else 0
 		return np.moveaxis(chan_last, last_dim, first_dim)
+
+	@staticmethod
+	def _calc_same_pad(n: int, ksize: int, stride: int) -> int:
+		'''
+		Calculate the size of padding of maxpool2d when "SAME" options is set.
+		'''
+		if n % stride:
+			return np.max(ksize - (n % stride), 0)
+		else:
+			return np.max(ksize - stride, 0)
+
 
 	def _stride(self, matrix: np.ndarray, ksize: int, stride: int, pad_mode="constant")->np.ndarray:
 		'''
@@ -154,11 +167,10 @@ class DnnNode(object):
 
 
 		row, col = matrix.shape[1:3]
-		calc_pad = lambda n: max(ksize - stride, 0) \
-				if n % stride == 0 \
-				else max(ksize - (n % stride), 0)
-		r_pad = calc_pad(row)
-		c_pad = calc_pad(col)
+		print(f"k: {ksize}, s: {stride}")
+		r_pad = self._calc_same_pad(row, ksize, stride)
+		c_pad = self._calc_same_pad(col, ksize, stride)
+		print(f"rpad: {r_pad}, cpad: {c_pad}")
 		if pad_mode == "edge":
 			pad = [(0, r_pad), (0, c_pad)]
 			matrix = self._pad(matrix, ksize, stride, pad_mode, pad=pad)
@@ -336,6 +348,7 @@ class MaxPool2D(DnnNode):
 		self.padding = padding
 
 
+		self.name = name
 		self._notify_completion(name)
 		return
 
@@ -347,28 +360,16 @@ class MaxPool2D(DnnNode):
 		matrix = self.in_node.result
 		n_batch, row, col, *depths = matrix.shape
 
-		print("#" * 40)
+		print(f" {self.name} ".center(30, '@'))
 		print(f"k: {self.ksize}, s: {self.stride}")
 
 
 		print(f"matrix: {matrix.shape}")
-		#if self.padding.upper() == "SAME":
-		#	calc_pad = lambda n: max(self.ksize - self.stride, 0) \
-		#			if n % self.stride == 0 \
-		#			else max(self.ksize - (n % self.stride), 0)
-		#	r_pad = calc_pad(row)
-		#	c_pad = calc_pad(col)
-		#	print("rpad", r_pad, "cpad", c_pad)
-		#	pad = [(0, r_pad), (0, c_pad)]
 
-
-		print(f"matrix: {matrix.shape}")
-
-		def formula(n):
+		def calc_new_len(n):
 			if self.padding.upper() == "SAME":
-				return int(np.ceil(float(n - self.ksize) / self.stride) + 1)
-			else:
-				return (n - self.ksize) // self.stride + 1
+				n = (n + self._calc_same_pad(n, self.ksize, self.stride))
+			return (n - self.ksize) // self.stride + 1
 
 		if self.padding.upper() == "SAME":
 			tmp_x = self._stride(matrix, self.ksize, self.stride, "edge")
@@ -378,7 +379,7 @@ class MaxPool2D(DnnNode):
 											# (f, f) is the tiled local matrix.
 		print(f"x: {x.shape}")
 		self.result = x.max(axis=(1, 2))	# Find a max value among (f, f) matrix elements
-		new_shape = (n_batch, *depths, formula(row), formula(col))
+		new_shape = (n_batch, *depths, calc_new_len(row), calc_new_len(col))
 		print(f"result: {self.result.shape}")
 		print(f"new shape: {new_shape}")
 		self.result = self.result.reshape(new_shape).transpose(0, 2, 3, 1)
