@@ -134,7 +134,7 @@ class DnnNode(object):
 	def _make_channel_last(self, chan_first: np.ndarray)->np.ndarray:
 		chan_first = np.array(chan_first)
 		last_dim = len(chan_first.shape) - 1
-		return np.moveaxis(chan_first, 0, last_dim)
+		return np.moveaxis(chan_first, 0, last_dim) # Or, you can implement using np.transpose
 
 	def _make_channel_first(self, chan_last: np.ndarray) -> np.ndarray:
 		chan_last = np.array(chan_last)
@@ -148,27 +148,31 @@ class DnnNode(object):
 		'''
 		#strider = np.lib.stride_tricks.as_strided
 		formula = lambda x: (x - ksize) // stride + 1
-		new_shape = (formula(matrix.shape[0]), formula(matrix.shape[1]), matrix.shape[2:])
+		row, col, *depths = matrix.shape
+		new_shape = (formula(row), formula(col), *depths)
+		print(f"new_shape: {new_shape}")
 		#matrix = strider(matrix, new_shape, [stride, stride])
 
 		# TODO: Parallelize!
 		tiles = np.array([matrix[r:r+ksize, c:c+ksize] 
-				for r in range(0, new_shape[0], stride) 
-				for c in range(0, new_shape[1], stride)
+				for r in range(0, row, stride) 
+				for c in range(0, col, stride)
+				if r + ksize <=row and c + ksize <= col
 				])
 
 		return tiles
 
-	def _pad(self, matrix: np.ndarray, ksize: int, n_stride: int) -> np.ndarray:
+	def _pad(self, matrix: np.ndarray, ksize: int, n_stride: int, mode="constant") -> np.ndarray:
 		'''
 		Insert a padding for the purpose of keeping the output's shape same.
 		For example, if the input is 3 x 5 shaped, then the result with padding is also 3 x 5.
 
-		@param np.ndarray matrix 
-		@param int n_filter The length of the filter. Assume that # of rows 
+		@params np.ndarray matrix 
+		@params int n_filter The length of the filter. Assume that # of rows 
 			in the filter equals to # of the columns of the filter. 
 			In short, the filter is regarded as square.
-		@param int n_stride the stride step. It also assumes vertical step == horizontal step.
+		@params int n_stride the stride step. It also assumes vertical step == horizontal step.
+		@params mode "constant" or "edge".
 		'''
 		
 		n_row, n_col = matrix.shape[:2]
@@ -177,9 +181,22 @@ class DnnNode(object):
 
 		pad = [(v_pad, v_pad), (h_pad, h_pad)]	# [(up, down), (left, right)]
 
-		matrix = np.pad(matrix, pad)
+		matrix = np.pad(matrix, pad, mode=mode)
 
 		return matrix
+
+	def _check_quadruple(self, quadruple):
+		'''
+		A quadruple (ksize or stride) must be formed as (1, x, x, 1)
+
+		@param quadruple A list or tuple of four integers. First and last element must be 1 and two central elements must be equal.
+		'''
+		batch, height, width, channel = quadruple
+		if not (batch == channel and height == width):
+			raise DNNException()
+	def _check_padding(self, option: str):
+		if option.upper() not in {"SAME", "VALID"}:
+			raise DNNException("padding argument must be one of 'SAME' or 'VALID', not {}".format(option))
 
 
 
@@ -197,18 +214,17 @@ class Conv2D(DnnNode):
 		# Need some verification codes...
 		if in_node.result.shape[-1] != kernels.shape[-2]:
 			raise DNNException("the number of output channels is different")
-		elif padding.upper() not in {"SAME", "VALID"}:
-			raise DNNException("padding argument must be one of 'SAME' or 'VALID', not {}".format(padding))
+		self._check_quadruple(strides)
+		self._check_padding(padding)
 
-
-		if strides[1] != strides[2]:
-			raise DNNException("In this code, we assumed that vertical and horizontal stride step were same")
-		if padding.upper() == "SAME":
-			in_node.result = self._pad(in_node.result, kernels.shape[0], strides[1])
-
+		self.ksize = kernels.shape[0]
+		self.stride = strides[1]
 		self.in_node = in_node
 		self.kernels = kernels
-		self.strides = strides
+
+		if padding.upper() == "SAME":
+			self.in_node.result = self._pad(self.in_node.result, self.ksize, self.stride)
+
 
 		self._notify_completion(name)
 
@@ -218,17 +234,16 @@ class Conv2D(DnnNode):
 		#			each is a matrix and since kernel.length == tile.length matmul can be done!
 
 		# Strategy 2:
-		ksize = self.kernels.shape[0]
-		stride = self.strides[1]
 		matrix = self.in_node.result
 
-		formula = lambda x: (x - ksize) // stride + 1
-		new_shape = (formula(matrix.shape[0]), formula(matrix.shape[1]), matrix.shape[2:])
+		formula = lambda x: (x - self.ksize) // self.stride + 1
+		row, col, *depths = matrix.shape
+		new_shape = (formula(row), formula(col), *depths)
 
 		w_last_dim = self.kernels.shape[-1]
-		w = self.kernels.transpose(3, 0, 1, 2).reshape(w_last_dim, -1)
-		tmp_x = self._stride(matrix, ksize, stride)
-		x = np.moveaxis(tmp_x, 0, len(tmp_x.shape) - 1) # Thus, ((f, f, c), out_n * out_n) is a logical shape.
+		w = self._make_channel_first(self.kernels).reshape(w_last_dim, -1)
+		tmp_x = self._stride(matrix, self.ksize, self.stride)
+		x = self._make_channel_last(tmp_x)	# Thus, ((f, f, c), out_n * out_n) is a logical shape.
 		self.result = w.dot(x).reshape(new_shape)
 		return
 
@@ -241,21 +256,46 @@ class BiasAdd(DnnNode):
 		self.result = None
 
 		self._notify_completion(name)
+		return
 
 	def run(self):
-		node = self.in_node.result
+		matrix = self.in_node.result
 		#node = self._make_channel_first(node)
 		#node = [n + bias for n, bias in zip(node, self.biases)]
 		#self.result = self._make_channel_last(node)
-		self.result = node + self.biases	# Same as the above theee lines, but it is much faster due to parallelism.
+		self.result = matrix + self.biases	# Same as the above theee lines, but it is much faster due to parallelism.
+		return
 
 
 class MaxPool2D(DnnNode):
-	def __init__(self, name, in_node, ksize, strides, padding):
-		pass
+	def __init__(self, name, in_node: DnnNode, ksize: list, strides: list, padding: str):
+		self._check_quadruple(ksize)
+		self._check_quadruple(strides)
+		self._check_padding(padding)
+
+		self.in_node = in_node
+		self.ksize = ksize[1]
+		self.stride = strides[1]
+
+		if padding.upper() == "SAME":
+			in_node.result = self._pad(in_node.result, self.ksize, self.stride)
+
 		
 	def run(self):
-		pass
+		matrix = self.in_node.result
+		formula = lambda x: (x - self.ksize) // self.stride + 1
+		sh0, sh1, *others = matrix.shape
+		new_shape = (formula(sh0), formula(sh1), *others)
+
+		tmp_x = self._stride(matrix, self.ksize, self.stride)
+		print(f"tmp x shape: {tmp_x.shape}, tmpx: {tmp_x}")
+		print("tmp x[0]", tmp_x[0])
+		x = self._make_channel_last(tmp_x)	# result: (f, f, c, out_n * out_n)
+		print(f"ksize: {self.ksize}, stride: {self.stride}", x)
+		self.result = x.max(axis=(0))
+		print(f"result: {self.result}")
+		self.result = self.result.reshape(new_shape)
+		return
 
 class BatchNorm(DnnNode):
 	def __init__(self, name, in_node, mean, variance, gamma, epsilon):
