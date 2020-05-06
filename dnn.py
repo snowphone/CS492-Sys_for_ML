@@ -154,8 +154,11 @@ class DnnNode(object):
 
 
 		row, col = matrix.shape[1:3]
-		r_pad = ((stride - 1) * row - 1 + ksize) // 2
-		c_pad = ((stride - 1) * col - 1 + ksize) // 2
+		calc_pad = lambda n: max(ksize - stride, 0) \
+				if n % stride == 0 \
+				else max(ksize - (n % stride), 0)
+		r_pad = calc_pad(row)
+		c_pad = calc_pad(col)
 		if pad_mode == "edge":
 			pad = [(0, r_pad), (0, c_pad)]
 			matrix = self._pad(matrix, ksize, stride, pad_mode, pad=pad)
@@ -171,7 +174,7 @@ class DnnNode(object):
 		tiles = np.array([
 			matrix[r:r+ksize, c:c+ksize]
 			for r in range(0, row, stride) 
-			for c in range(0, row, stride)
+			for c in range(0, col, stride)
 			if r != row and c != col and 
 				r + ksize <=padded_row and c + ksize <= padded_col
 			])
@@ -181,7 +184,7 @@ class DnnNode(object):
 		return tiles
 
 	def _pad(self, matrix: np.ndarray, ksize: int, 
-			n_stride: int, mode="constant", *, pad=None) -> np.ndarray:
+			n_stride: int, mode="constant", pad=None) -> np.ndarray:
 		'''
 		Insert a padding for the purpose of keeping the output's shape same.
 		For example, if the input is 3 x 5 shaped, then the result with padding is also 3 x 5.
@@ -338,27 +341,42 @@ class MaxPool2D(DnnNode):
 
 		
 	def run(self):
+		'''
+		valid 모드에서는 잘 동작하므로, 이에 관계된 코드는 지우지 말 것!
+		'''
 		matrix = self.in_node.result
 		n_batch, row, col, *depths = matrix.shape
 
+		print("#" * 40)
+		print(f"k: {self.ksize}, s: {self.stride}")
+
+
+		print(f"matrix: {matrix.shape}")
+		#if self.padding.upper() == "SAME":
+		#	calc_pad = lambda n: max(self.ksize - self.stride, 0) \
+		#			if n % self.stride == 0 \
+		#			else max(self.ksize - (n % self.stride), 0)
+		#	r_pad = calc_pad(row)
+		#	c_pad = calc_pad(col)
+		#	print("rpad", r_pad, "cpad", c_pad)
+		#	pad = [(0, r_pad), (0, c_pad)]
+
+
+		print(f"matrix: {matrix.shape}")
+
+		def formula(n):
+			if self.padding.upper() == "SAME":
+				return int(np.ceil(float(n - self.ksize) / self.stride) + 1)
+			else:
+				return (n - self.ksize) // self.stride + 1
 
 		if self.padding.upper() == "SAME":
-			r_pad = ((self.stride - 1) * row - 1 + self.ksize) // 2
-			c_pad = ((self.stride - 1) * col - 1 + self.ksize) // 2
-			pad = [(0, 0), (0, r_pad), (0, c_pad), (0, 0)]
-
-			matrix  = self._pad(matrix, self.ksize, self.stride, "edge", pad=pad)
-
-		def formula(x):
-			ret = ((x - self.ksize) // self.stride + 1)
-			if self.padding.upper() == "SAME":
-				return ret // self.stride
-			else:
-				return ret
-
-		tmp_x = self._stride(matrix, self.ksize, self.stride)
+			tmp_x = self._stride(matrix, self.ksize, self.stride, "edge")
+		else:
+			tmp_x = self._stride(matrix, self.ksize, self.stride)
 		x = self._make_channel_last(tmp_x)	# Result: (batch, f, f, c, out_n * out_n)
 											# (f, f) is the tiled local matrix.
+		print(f"x: {x.shape}")
 		self.result = x.max(axis=(1, 2))	# Find a max value among (f, f) matrix elements
 		new_shape = (n_batch, *depths, formula(row), formula(col))
 		print(f"result: {self.result.shape}")
