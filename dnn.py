@@ -154,7 +154,6 @@ class DnnNode(object):
 		row, col = matrix.shape[:2]
 		r_pad = ((stride - 1) * row - 1 + ksize) // 2
 		c_pad = ((stride - 1) * col - 1 + ksize) // 2
-
 		if pad_mode == "edge":
 			pad = [(0, r_pad), (0, c_pad)]
 			matrix = self._pad(matrix, ksize, stride, pad_mode, pad=pad)
@@ -168,7 +167,8 @@ class DnnNode(object):
 		tiles = np.array([matrix[r:r+ksize, c:c+ksize] 
 			for r in range(0, row, stride) 
 			for c in range(0, row, stride)
-			if r + ksize <=padded_row and c + ksize <= col
+			if r != row and c != col and 
+				r + ksize <=padded_row and c + ksize <= padded_col
 			])
 
 		return tiles
