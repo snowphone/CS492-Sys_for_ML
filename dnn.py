@@ -135,13 +135,13 @@ class DnnNode(object):
 		chan_first = np.array(chan_first)
 		last_dim = len(chan_first.shape) - 1
 		first_dim = 1 if has_batch else 0
-		return np.moveaxis(chan_first, first_dim, last_dim) # Or, you can implement using np.transpose
+		return np.swapaxes(chan_first, first_dim, last_dim) # Or, you can implement using np.transpose
 
 	def _make_channel_first(self, chan_last: np.ndarray, has_batch=True) -> np.ndarray:
 		chan_last = np.array(chan_last)
 		last_dim = len(chan_last.shape) - 1
 		first_dim = 1 if has_batch else 0
-		return np.moveaxis(chan_last, last_dim, first_dim)
+		return np.swapaxes(chan_last, last_dim, first_dim)
 
 	def _stride(self, matrix: np.ndarray, ksize: int, stride: int, pad_mode="constant")->np.ndarray:
 		'''
