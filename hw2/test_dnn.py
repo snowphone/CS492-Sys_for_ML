@@ -5,13 +5,6 @@ import dnn
 
 
 class TestNode(unittest.TestCase):
-	def test_verify(self):
-		lhs = np.array([1, 2, 3])
-		rhs = np.array([4, 5])
-
-		function = dnn.DnnNode()._verify_shapes
-		self.assertRaises(dnn.DNNException, function, lhs, rhs)
-
 	def test_leakyrelu(self):
 		arr = np.array([-1, 0, 1, 2, 3])
 		node = dnn.DnnNode()

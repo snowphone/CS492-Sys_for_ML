@@ -345,8 +345,8 @@ class MaxPool2D(DnnNode):
 			out_h = math.floor(in_node.result.shape[2]/strides[2]) + 1
 			self.result = np.ndarray((in_node.result.shape[0], out_w, out_h, in_node.result.shape[3]))
 		else:
-			out_w = math.floor((in_node.result.shape[1] - kernels.shape[0])/strides[1]) + 1
-			out_h = math.floor((in_node.result.shape[2] - kernels.shape[1])/strides[2]) + 1
+			out_w = math.floor((in_node.result.shape[1] - ksize[1])/strides[1]) + 1
+			out_h = math.floor((in_node.result.shape[2] - ksize[2])/strides[2]) + 1
 			self.result = np.ndarray((in_node.result.shape[0], out_w, out_h, in_node.result.shape[3]))
 						
 		self.name = name
