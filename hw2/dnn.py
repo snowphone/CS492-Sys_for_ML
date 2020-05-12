@@ -118,19 +118,6 @@ class DnnNode(object):
 		'''
 		print(name)
 
-	def _verify_shapes(self, lhs: np.ndarray, rhs: np.ndarray):
-		'''
-		Compare the shapes of given numpy arrays.
-		If the shape is not equal, then DNNException would be raised to interrupt the flow.
-
-		@throws DNNException
-		'''
-		if lhs.shape != rhs.shape:
-			className = self.__class__.__name__
-			raise DNNException("While constructing {}, lhs's shape {} != rhs's shape {}".format(className, lhs.shape, rhs.shape))
-
-		return
-
 
 	def _check_quadruple(self, quadruple):
 		'''
@@ -195,7 +182,6 @@ class DnnNode(object):
 		@return np.ndarray shape: (batch, out_n x out_n, tile)  => (batch, n*n, f, f, c)
 		Tile means a local area of the matrix and its shape equals to the kernel.
 		'''
-		#strider = np.lib.stride_tricks.as_strided
 
 
 		row, col = matrix.shape[1:3]
@@ -266,9 +252,6 @@ class DnnNode(object):
 		matrix = DnnNode._make_batch_major(matrix)
 		return matrix
 
-#
-# Complete below classes.
-#
 
 class Conv2D(DnnNode):
 	def __init__(self, name: str, in_node: DnnNode, 
@@ -276,7 +259,6 @@ class Conv2D(DnnNode):
 		'''
 		@param padding Note that "SAME" or "VALID" (case insensitive) can be permitted.
 		'''
-		# Need some verification codes...
 		if in_node.result.shape[-1] != kernels.shape[-2]:
 			raise DNNException("the number of output channels is different")
 		self._check_quadruple(strides)
@@ -331,7 +313,6 @@ class Conv2D(DnnNode):
 
 class BiasAdd(DnnNode):
 	def __init__(self, name: str, in_node: DnnNode, biases: np.ndarray):
-		#self._verify_shapes(in_node.result, biases, dim=-1)
 		if in_node.result.shape[-1] != biases.shape[-1]:
 			raise DNNException("input's shape {} != biases.shape {}".format(in_node.result.shape[-1], biases.shape[-1]))
 		self.in_node, self.biases = in_node, biases
