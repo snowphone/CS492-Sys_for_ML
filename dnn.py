@@ -277,8 +277,8 @@ class Conv2D(DnnNode):
 		@param padding Note that "SAME" or "VALID" (case insensitive) can be permitted.
 		'''
 		# Need some verification codes...
-		#if in_node.result.shape[-1] != kernels.shape[-2]:
-		#	raise DNNException("the number of output channels is different")
+		if in_node.result.shape[-1] != kernels.shape[-2]:
+			raise DNNException("the number of output channels is different")
 		self._check_quadruple(strides)
 		self._check_padding(padding)
 
@@ -287,7 +287,13 @@ class Conv2D(DnnNode):
 		self.in_node = in_node
 		self.kernels = kernels
 		self.padding = padding
-
+		if(padding.upper() == "SAME"):
+			self.result = np.ndarray(in_node.result.shape[0:3] + (kernels.shape[3],))
+		else:
+			out_w = math.floor((in_node.result.shape[1] - kernels.shape[0])/strides[1]) + 1
+			out_h = math.floor((in_node.result.shape[2] - kernels.shape[1])/strides[2]) + 1
+			self.result = np.ndarray(in_node.result.shape[0], out_w, out_h, kernels.shape[3])
+		
 		self.name = name
 		self._notify_completion(name)
 
@@ -326,10 +332,10 @@ class Conv2D(DnnNode):
 class BiasAdd(DnnNode):
 	def __init__(self, name: str, in_node: DnnNode, biases: np.ndarray):
 		#self._verify_shapes(in_node.result, biases, dim=-1)
-		#if in_node.result.shape[-1] != biases.shape[-1]:
-		#	raise DNNException("input's shape {} != biases.shape {}".format(in_node.result.shape[-1], biases.shape[-1]))
+		if in_node.result.shape[-1] != biases.shape[-1]:
+			raise DNNException("input's shape {} != biases.shape {}".format(in_node.result.shape[-1], biases.shape[-1]))
 		self.in_node, self.biases = in_node, biases
-		self.result = None
+		self.result = np.ndarray(in_node.result.shape)
 
 		self.name = name
 		self._notify_completion(name)
@@ -351,8 +357,13 @@ class MaxPool2D(DnnNode):
 		self.ksize = ksize[1]
 		self.stride = strides[1]
 		self.padding = padding
-
-
+		if(padding.upper() == "SAME"):
+			self.result = np.ndarray(in_node.result.shape)
+		else:
+			out_w = math.floor((in_node.result.shape[1] - kernels.shape[0])/strides[1]) + 1
+			out_h = math.floor((in_node.result.shape[2] - kernels.shape[1])/strides[2]) + 1
+			self.result = np.ndarray(in_node.result.shape[0], out_w, out_h, in_node.result.shape[3])
+		
 		self.name = name
 		self._notify_completion(name)
 		return
@@ -385,12 +396,12 @@ class MaxPool2D(DnnNode):
 class BatchNorm(DnnNode):
 	def __init__(self, name, in_node, mean, variance, gamma, epsilon, beta=0):
 
-		#if not (in_node.result.shape[-1] == mean.shape[0]):
-		#	raise DNNException()
-		#elif not (in_node.result.shape[-1] == variance.shape[0]):
-		#	raise DNNException()
-		#elif not (in_node.result.shape[-1] == gamma.shape[0]):
-		#	raise DNNException()
+		if not (in_node.result.shape[-1] == mean.shape[0]):
+			raise DNNException()
+		elif not (in_node.result.shape[-1] == variance.shape[0]):
+			raise DNNException()
+		elif not (in_node.result.shape[-1] == gamma.shape[0]):
+			raise DNNException()
 
 		self.in_node = in_node
 		self.mean = mean
@@ -398,7 +409,8 @@ class BatchNorm(DnnNode):
 		self.gamma = gamma
 		self.epsilon = epsilon
 		self.beta = 0
-
+		self.result = np.ndarray(in_node.result.shape)
+		
 		self.name = name
 		self._notify_completion(name)
 		return
@@ -413,6 +425,7 @@ class LeakyReLU(DnnNode):
 	def __init__(self, name: str, in_node: DnnNode):
 		self.in_node = in_node
 		self.alpha = 0.1
+		self.result = np.ndarray(in_node.result.shape)
 
 		self._notify_completion(name)
 		return
