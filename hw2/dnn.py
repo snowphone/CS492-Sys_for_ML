@@ -270,7 +270,9 @@ class Conv2D(DnnNode):
 		self.kernels = kernels
 		self.padding = padding
 		if(padding.upper() == "SAME"):
-			self.result = np.ndarray(in_node.result.shape[0:3] + (kernels.shape[3],))
+			out_w = math.floor(in_node.result.shape[1]/strides[1]) + 1
+			ouy_h = math.floor(in_node.result.shape[2]/strides[2]) + 1
+			self.result = np.ndarray(in_node.result.shape[0], out_w, out_h, kernels.shape[3])
 		else:
 			out_w = math.floor((in_node.result.shape[1] - kernels.shape[0])/strides[1]) + 1
 			out_h = math.floor((in_node.result.shape[2] - kernels.shape[1])/strides[2]) + 1
@@ -339,7 +341,9 @@ class MaxPool2D(DnnNode):
 		self.stride = strides[1]
 		self.padding = padding
 		if(padding.upper() == "SAME"):
-			self.result = np.ndarray(in_node.result.shape)
+			out_w = math.floor(in_node.result.shape[1]/strides[1]) + 1
+			ouy_h = math.floor(in_node.result.shape[2]/strides[2]) + 1
+			self.result = np.ndarray(in_node.result.shape[0], out_w, out_h, in_node.result.shape[3])
 		else:
 			out_w = math.floor((in_node.result.shape[1] - kernels.shape[0])/strides[1]) + 1
 			out_h = math.floor((in_node.result.shape[2] - kernels.shape[1])/strides[2]) + 1
