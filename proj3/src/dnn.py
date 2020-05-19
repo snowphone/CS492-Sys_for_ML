@@ -108,6 +108,10 @@ class DnnNode(object):
     def run(self, counter):
         self.result = None 
 
+    def store_value(self, counter):
+        path = os.path.join("intermediate", "layer_{}.npy".format(counter))
+        np.save(path, self.result)
+
 class Conv2D(DnnNode):
     def __init__(self, name, in_node, kernel, strides, padding):
         self.name = name
@@ -170,6 +174,7 @@ class Conv2D(DnnNode):
             for p in pool:
                 p.join()
         self.result = np.ctypeslib.as_array(self.shm_result)
+        self.store_value(counter)
 
     def run_for_oc(self, ptin, chunk, k):
         oc = chunk * parallelism + k
