@@ -113,10 +113,6 @@ class DnnNode(object):
     def run(self, counter):
         self.result = None 
 
-    def store_value(self, counter):
-        path = os.path.join("intermediate", "layer_{}.npy".format(counter))
-        np.save(path, self.result)
-
 class Conv2D(DnnNode):
     def __init__(self, name, in_node, kernel, strides, padding):
         self.name = name
