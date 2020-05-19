@@ -164,6 +164,7 @@ class Conv2D(DnnNode):
         self.shm_result = sharedctypes.RawArray(tmp_result._type_, tmp_result)
 
     def run(self, counter):
+        print("Start of layer{}".format(self.name))
         ptins = []
         for i in range(0, parallelism):
             ptins.append(np.pad(self.in_node.result, self.pad, mode='constant'))
