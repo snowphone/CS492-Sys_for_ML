@@ -31,6 +31,7 @@ class DnnInferenceEngine(object):
                 if skip_current:
                     continue
                 current.run(counter)
+                print("Layer: {}, counter: {}".format(current.name, counter))
                 if not isinstance(current, Input):
                     counter += 1
                 if self.g.is_out_node(current):
@@ -175,7 +176,6 @@ class Conv2D(DnnNode):
             for p in pool:
                 p.join()
         self.result = np.ctypeslib.as_array(self.shm_result)
-        self.store_value(counter)
 
     def run_for_oc(self, ptin, chunk, k):
         oc = chunk * parallelism + k
