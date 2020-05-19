@@ -33,6 +33,8 @@ class DnnInferenceEngine(object):
                 current.run(counter)
                 print("Layer: {}, counter: {}".format(current.name, counter))
                 if not isinstance(current, Input):
+                    path = os.path.join("intermediate", "layer_{}.npy".format(counter))
+                    np.save(path, current.result)
                     counter += 1
                 if self.g.is_out_node(current):
                     out = current.result
@@ -165,7 +167,7 @@ class Conv2D(DnnNode):
         self.shm_result = sharedctypes.RawArray(tmp_result._type_, tmp_result)
 
     def run(self, counter):
-        print("Start of layer{}".format(self.name))
+        print("Start of layer: {}".format(self.name))
         ptins = []
         for i in range(0, parallelism):
             ptins.append(np.pad(self.in_node.result, self.pad, mode='constant'))
