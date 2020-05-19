@@ -19,6 +19,7 @@ class DnnInferenceEngine(object):
         currents = [self.g.in_node]
         done = set()
         counter = 0
+        os.makedirs("intermediate", exist_ok=True)
         while (len(currents) != 0):
             nexts = []
             for current in currents:
@@ -33,8 +34,9 @@ class DnnInferenceEngine(object):
                 current.run(counter)
                 print("Layer: {}, counter: {}".format(current.name, counter))
                 if not isinstance(current, Input):
-                    path = os.path.join("intermediate", "layer_{}.npy".format(counter))
-                    np.save(path, current.result)
+                    if self.debug:
+                        path = os.path.join("intermediate", "layer_{}.npy".format(counter))
+                        np.save(path, current.result)
                     counter += 1
                 if self.g.is_out_node(current):
                     out = current.result
