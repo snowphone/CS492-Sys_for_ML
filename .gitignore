@@ -4,7 +4,12 @@ __pycache__/
 *$py.class
 
 # C extensions
-*.so
+**/*.so
+
+# Project specific files
+**/*.jpg
+**/intermediate/
+
 
 # Distribution / packaging
 .Python
