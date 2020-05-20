@@ -6,17 +6,27 @@
 #include <immintrin.h>
 #include <stdio.h>
 
+__m256 add(float* l, float* r) {
+	__m256 lhs = _mm256_loadu_ps(l);
+	__m256 rhs = _mm256_loadu_ps(r);
+	return _mm256_add_ps(lhs, rhs);
+}
+
 int main()
 {
     // Multiply 8 floats at a time
-    __m256 evens = _mm256_set_ps(2.0, 4.0, 6.0, 8.0, 10.0, 12.0, 14.0, 16.0);
-    __m256 odds  = _mm256_set_ps(1.0, 3.0, 5.0, 7.0, 9.0, 11.0, 13.0, 15.0);
-    __m256 res   = _mm256_mul_ps(evens, odds);
+	float f_evens[] = {2, 4, 6, 8, 10, 12, 14, 16};
+	float f_odds[]  = {15, 13, 11, 9, 7, 5, 3, 1};
+
 
     printf("evens: ");
-    for (int i = 0; i < 8; i++) printf("%3.0f ", *(float *)&evens[i]);
+    for (int i = 0; i < 8; i++) printf("%3.0f ", f_evens[i]);
     printf("\nodds:  ");
-    for (int i = 0; i < 8; i++) printf("%3.0f ", *(float *)&odds[i]);
+    for (int i = 0; i < 8; i++) printf("%3.0f ", f_odds[i]);
+
+	__m256 ret = add(f_evens, f_odds);
+	float res[8];
+	_mm256_storeu_ps(res, ret);
     printf("\nres:   ");
     for (int i = 0; i < 8; i++) printf("%3.0f ", *(float *)&res[i]);
     printf("\n");
