@@ -165,13 +165,17 @@ class Conv2D(DnnNode):
         self.result = np.zeros((1, self.OW, self.OH, self.OC))
         tmp_result = np.ctypeslib.as_ctypes(self.result)
         self.shm_result = sharedctypes.RawArray(tmp_result._type_, tmp_result)
-
+    
+        # tmp_result : ctypes object from initial result(zero-valued)
+        # shm_result : from multiprocessing library.
+        #               ctpyes array allocated from shared memoryi
+        # later np object based on shm_result are kind of pointer? so one change effect other
     def run(self, counter):
         print("Start of layer: {}".format(self.name))
         ptins = []
         for i in range(0, parallelism):
             ptins.append(np.pad(self.in_node.result, self.pad, mode='constant'))
-        for chunk in range(0, int(self.OC / parallelism) + 1):
+        for chunk in range(0, int(self.OC / paralaelism) + 1):
             pool = [Process(target=self.run_for_oc, args=(ptins[k], chunk, k)) for k in range(min(parallelism * (chunk+1), self.OC) - parallelism * chunk)]
             for j in range(min(parallelism * (chunk + 1), self.OC) - parallelism * chunk):
                 pool[j].start()
