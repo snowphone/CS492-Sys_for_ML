@@ -1,50 +1,99 @@
+#include <assert.h>
+#include <err.h>
+#include <errno.h>
+#include <iso646.h>
 #include <math.h>
+#include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
 #include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
 
 #include <immintrin.h>
 #include <pthread.h>
+#include <sys/mman.h>
 #include <unistd.h>
 
 enum { avx2_sz = 8 };
+typedef enum {
+	VALID,
+	SAME,
+	POOLING,
+	CONVOLVING,
+} padding_t;
 
 #define max(x, y) ((x) > (y) ? (x) : (y))
 
-typedef const int cint;
-
 typedef struct Pool {
-	size_t n_worker;
+	size_t	  n_worker;
 	pthread_t threads[];
 } Pool;
 
 typedef struct {
 	float *arr;
-	int size;
+	int	   size;
 } Array;
 
 typedef struct Queue {
-	float *iter;
-	float *end;
+	float *			iter;
+	float *			end;
 	pthread_mutex_t lock;
 } Queue;
 
+typedef struct Maxpool {
+	float *const	 arr;
+	int *const		 shape;
+	const int *const ksize;
+	const int *const strides;
+	padding_t		 padding;
+} Maxpool;
+
+typedef struct mp_record_t {
+	float *src_tensor;
+	float *dst_pixel;
+	int	   r;
+	int	   c;
+} mp_record_t;
+
+typedef struct MPQueue {
+	mp_record_t *	iter;
+	mp_record_t *	end;
+	pthread_mutex_t lock;
+} MPQueue;
+
+
 static void *leaky_relu_impl(void *_arg);
+
 static void *batch_norm_impl(void *_args);
-static void batch_normalization_pixel(float *const pixel,
-									  const int shape[static 4],
-									  float *const mean, float *const var,
-									  float *const gamma, const float epsilon);
+static void	 batch_normalization_pixel(float *const pixel,
+									   const int	shape[static 4],
+									   float *const mean,
+									   float *const var,
+									   float *const gamma,
+									   const float	epsilon);
+
 static void *bias_add_impl(void *_args);
-static void bias_add_pixel(float *const arr, int shape[static 4],
-						   float *const biases);
+static void	 bias_add_pixel(float *const arr, int shape[static 4], float *const biases);
+
+static void *maxpool_impl(void *_args);
+static void maxpool_receptive_field(
+	float *	  src_tensor,
+	float *	  dst,
+	int		  r,
+	int		  c,
+	const int shape[static 4],
+	const int ksize[static 2],
+	const int strides[static 2]);
+
 
 static Pool *pool = NULL;
 
+
 static Pool *init_pool() {
 	const int numCPUs = sysconf(_SC_NPROCESSORS_ONLN);
-	Pool *pool = malloc(sizeof pool + numCPUs * sizeof(pthread_t));
-	pool->n_worker = numCPUs;
+	Pool *	  pool	  = malloc(sizeof pool + numCPUs * sizeof(pthread_t));
+	pool->n_worker	  = numCPUs;
 
 	return pool;
 }
@@ -68,6 +117,17 @@ static void deploy(void *(*start_routine)(void *), void *args[]) {
 }
 
 /**
+ * A simple wrapper of mmap, which allocate in page-unit.
+ */
+static void *Mmap(const size_t size) {
+	void *addr = mmap(NULL, size, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+	if (addr == (void *) -1) {
+		errx(ENOMEM, "Failed to allocate memory");
+	}
+	return addr;
+}
+
+/**
  * In-place version of leaky relu activation.
  *
  * @param[in,out] arr represented as 1-d array.
@@ -78,18 +138,18 @@ void leaky_relu(float *const arr, const int size) {
 		pool = init_pool();
 
 	const int job_size = size / pool->n_worker;
-	float *arr_it = arr;
+	float *	  arr_it   = arr;
 
 	Array args[pool->n_worker];
 	for (int i = 0; i < pool->n_worker; ++i) {
 		if (i + 1 != pool->n_worker) {
-			args[i].arr = arr_it;
+			args[i].arr	 = arr_it;
 			args[i].size = job_size;
 
 			arr_it += job_size;
 		} else {
 			// Last
-			args[i].arr = arr_it;
+			args[i].arr	 = arr_it;
 			args[i].size = arr + size - arr_it;
 
 			arr_it += args[i].size;
@@ -103,9 +163,9 @@ void leaky_relu(float *const arr, const int size) {
 }
 
 static void *leaky_relu_impl(void *_arg) {
-	Array *arg = _arg;
-	float *const arr = arg->arr;
-	const int size = arg->size;
+	Array *		 arg  = _arg;
+	float *const arr  = arg->arr;
+	const int	 size = arg->size;
 
 	const float *const src_end = arr + size;
 
@@ -115,7 +175,7 @@ static void *leaky_relu_impl(void *_arg) {
 		__m256 v_src = _mm256_loadu_ps(it);
 
 		__m256 alpha_src = _mm256_mul_ps(alpha, v_src);
-		__m256 v_max = _mm256_max_ps(v_src, alpha_src);
+		__m256 v_max	 = _mm256_max_ps(v_src, alpha_src);
 
 		_mm256_storeu_ps(it, v_max);
 	}
@@ -130,25 +190,23 @@ static void *leaky_relu_impl(void *_arg) {
 	return NULL;
 }
 
-void batch_normalization(float *const arr, const int shape[static 4],
-						 float *const mean, float *const var,
-						 float *const gamma, const float epsilon) {
+void batch_normalization(float *const arr, const int shape[static 4], float *const mean, float *const var, float *const gamma, const float epsilon) {
 
-	float *end = arr + shape[0] * shape[1] * shape[2] * shape[3];
-	Queue queue = {arr, end, PTHREAD_MUTEX_INITIALIZER};
+	float *			  end	 = arr + shape[0] * shape[1] * shape[2] * shape[3];
+	Queue			  queue	 = {arr, end, PTHREAD_MUTEX_INITIALIZER};
 	const void *const args[] = {&queue, shape, mean, var, gamma, &epsilon};
 
-	deploy(batch_norm_impl, (void *)args);
+	deploy(batch_norm_impl, (void *) args);
 }
 
 static void *batch_norm_impl(void *_args) {
-	void **args = _args;
-	Queue *q = args[0];
-	int *shape = args[1];
-	float *mean = args[2];
-	float *var = args[3];
-	float *gamma = args[4];
-	float epsilon = *(float *)args[5];
+	void **args	   = _args;
+	Queue *q	   = args[0];
+	int *  shape   = args[1];
+	float *mean	   = args[2];
+	float *var	   = args[3];
+	float *gamma   = args[4];
+	float  epsilon = *(float *) args[5];
 
 	while (1) {
 		pthread_mutex_lock(&q->lock);
@@ -166,79 +224,93 @@ static void *batch_norm_impl(void *_args) {
 }
 
 static void batch_normalization_pixel(float *const pixel,
-									  const int shape[static 4],
-									  float *const mean, float *const var,
-									  float *const gamma, const float epsilon) {
-	const int n_batch = shape[0], n_row = shape[1], n_col = shape[2],
-			  n_chan = shape[3];
-	const int chan_size = 1, col_size = n_chan * chan_size,
-			  row_size = n_col * col_size, batch_size = n_row * row_size,
-			  size = n_batch * batch_size;
+									  const int	   shape[static 4],
+									  float *const mean,
+									  float *const var,
+									  float *const gamma,
+									  const float  epsilon) {
+	const int n_chan = shape[3];
 	/* Formula:
-	   x = (matrix - self.mean) / np.sqrt(self.variance + self.epsilon)
-	   self.result = self.gamma * x + self.beta
-	   */
+     x = (matrix - self.mean) / np.sqrt(self.variance + self.epsilon)
+     self.result = self.gamma * x + self.beta
+     */
 
-	__m256 e = _mm256_set_ps(epsilon, epsilon, epsilon, epsilon, epsilon,
-							 epsilon, epsilon, epsilon);
+	__m256 e  = _mm256_set1_ps(epsilon);
 	float *it = pixel;
-	int ch = 0;
+	int	   ch = 0;
 	for (ch = 0; ch < n_chan; ch += avx2_sz) {
 		__m256 x = _mm256_loadu_ps(it + ch);
 		__m256 m = _mm256_loadu_ps(mean + ch);
 		__m256 v = _mm256_loadu_ps(var + ch);
 		__m256 g = _mm256_loadu_ps(gamma + ch);
 
-		x = _mm256_sub_ps(x, m);
+		x		   = _mm256_sub_ps(x, m);
 		__m256 tmp = _mm256_sqrt_ps(_mm256_add_ps(v, e));
-		x = _mm256_div_ps(_mm256_mul_ps(g, x), tmp);
+		x		   = _mm256_div_ps(_mm256_mul_ps(g, x), tmp);
 
 		_mm256_storeu_ps(it + ch, x);
 	}
 
 	for (; ch < n_chan; ++ch) {
 		float x = it[ch];
-		x = gamma[ch] * (x - mean[ch]) / sqrt(var[ch] + epsilon);
-		it[ch] = x;
+		x		= gamma[ch] * (x - mean[ch]) / sqrt(var[ch] + epsilon);
+		it[ch]	= x;
 	}
 
 	return;
 }
 
 void bias_add(float *const arr, int shape[static 4], float *const biases) {
-	const int size = shape[0] * shape[1] * shape[2] * shape[3];
-	Queue queue = {arr, arr + size, PTHREAD_MUTEX_INITIALIZER};
-	void *args[] = {&queue, shape, biases};
+	const int size	 = shape[0] * shape[1] * shape[2] * shape[3];
+	Queue	  queue	 = {arr, arr + size, PTHREAD_MUTEX_INITIALIZER};
+	void *	  args[] = {&queue, shape, biases};
 
-	deploy(bias_add_impl, (void *)args);
+	deploy(bias_add_impl, (void *) args);
 }
 
 static void *bias_add_impl(void *_args) {
-	void **args = _args;
-	Queue *q = args[0];
-	int *shape = args[1];
+	void **args	  = _args;
+	Queue *q	  = args[0];
+	int *  shape  = args[1];
 	float *biases = args[2];
+
+	static bool is_set_len = false;
+	static int	addr_len;
+	if (!is_set_len) {
+		addr_len   = (q->end - q->iter) / pool->n_worker / shape[3];
+		is_set_len = true;
+	}
+	float *addresses[addr_len];
+	memset(addresses, 0, sizeof addresses);
+	int len = 0;
 
 	while (1) {
 		pthread_mutex_lock(&q->lock);
-		float *arr = q->iter;
-		q->iter += shape[3];
+		for (int i = 0; i < addr_len; ++i) {
+			addresses[len++] = q->iter;
+			q->iter += shape[3];
+			if (q->iter >= q->end)
+				break;
+		}
 		pthread_mutex_unlock(&q->lock);
 
-		if (arr < q->end)
-			bias_add_pixel(arr, shape, biases);
-		else
-			break;
+		for (int i = 0; i < len; ++i) {
+			float *addr = addresses[i];
+			if (addr && addr < q->end)
+				bias_add_pixel(addr, shape, biases);
+			else if (i == addr_len - 1)
+				break;
+			else
+				goto exit;
+		}
+		len = 0;
 	}
-
+exit:
 	return NULL;
 }
 
-static void bias_add_pixel(float *const arr, int shape[static 4],
-						   float *const biases) {
-	const int size = shape[0] * shape[1] * shape[2] * shape[3],
-			  n_chan = shape[3];
-	const float *const end = arr + size;
+static void bias_add_pixel(float *const arr, int shape[static 4], float *const biases) {
+	const int n_chan = shape[3];
 
 	int ch = 0;
 	for (ch = 0; ch < n_chan - avx2_sz; ch += avx2_sz) {
@@ -252,3 +324,258 @@ static void bias_add_pixel(float *const arr, int shape[static 4],
 	}
 }
 
+static Maxpool create_maxpool_arr(Maxpool conv) {
+	const int n_batch = conv.shape[0],
+			  out_r	  = (conv.shape[1] - conv.ksize[0]) / conv.strides[0] + 1,
+			  out_c	  = (conv.shape[2] - conv.ksize[1]) / conv.strides[1] + 1,
+			  n_chan  = conv.shape[3],
+			  size	  = n_batch * out_r * out_c * n_chan;
+
+	Maxpool ret = {
+		.arr	 = Mmap(sizeof(float) * size),
+		.shape	 = malloc(sizeof(int) * 4),
+		.ksize	 = conv.ksize,
+		.strides = conv.strides,
+		.padding = conv.padding,
+	};
+
+	memmove(ret.shape, (int[]){n_batch, out_r, out_c, n_chan}, sizeof(int) * 4);
+
+	return ret;
+}
+
+static int calc_new_pad(const int n, const int k, const int s, padding_t pad_opt) {
+	switch (pad_opt) {
+	case VALID:
+		return 0;
+	case SAME:
+		if (n % s)
+			return max(k - (n % s), 0);
+		else
+			return max(k - s, 0);
+	default:
+		errx(EINVAL, "Only VALID or SAME enum is allowed");
+	}
+}
+
+/**
+ * Insert padding
+ *
+ * @param src
+ * @param option If option is set to PADDING, -INFs are padded into the right and the bottom.
+ * 				Otherwise (set to CONVOLVING), zero values are padded.
+ */
+static Maxpool pad(Maxpool src, padding_t option) {
+	switch (option) {
+	case POOLING: {
+		const int pad_r	   = calc_new_pad(src.shape[1], src.ksize[0], src.strides[0], src.padding),
+				  pad_c	   = calc_new_pad(src.shape[2], src.ksize[1], src.strides[1], src.padding),
+				  n_batch  = src.shape[0],
+				  new_r	   = src.shape[1] + pad_r,
+				  new_c	   = src.shape[2] + pad_c,
+				  n_chan   = src.shape[3],
+				  new_size = n_batch * new_r * new_c * n_chan;
+
+		Maxpool padded = {
+			.arr	 = Mmap(sizeof(float) * new_size),
+			.shape	 = malloc(sizeof(int) * 4),
+			.ksize	 = src.ksize,
+			.strides = src.strides,
+			.padding = src.padding,
+		};
+
+		memmove(padded.shape, (int[]){n_batch, new_r, new_c, n_chan}, sizeof(int) * 4);
+
+		// Right pad
+		const int n_row			= src.shape[1],
+				  n_col			= src.shape[2],
+				  src_line_size = n_col * n_chan,
+				  dst_line_size = new_c * n_chan;
+		float *src_line			= src.arr;
+		float *dst_line			= padded.arr;
+		for (int r = 0; r < n_row; ++r, src_line += src_line_size, dst_line += dst_line_size) {
+
+			memmove(dst_line, src_line, sizeof(float) * src_line_size);
+
+			for (int c = src_line_size; c < dst_line_size; ++c) {
+				dst_line[c] = -HUGE_VALF;
+			}
+		}
+
+		// Bottom pad
+		for (float *it = dst_line; it < padded.arr + new_size; ++it) {
+			*it = -HUGE_VALF;
+		}
+
+		return padded;
+	}
+	case CONVOLVING:
+		//TODO
+		errx(ENOSYS, "Not yet implemented");
+	default:
+		errx(EINVAL, "Invalid argument");
+	}
+
+	return (Maxpool){};
+}
+
+float *maxpool(const float src[],
+			   const int   shape[static 4],
+			   const int   ksize[static 2],
+			   const int   strides[static 2],
+			   padding_t   padding) {
+	Maxpool src_conv   = {(float *) src, (int *) shape, ksize, strides, padding};
+	Maxpool padded_src = pad(src_conv, POOLING); // Only right and bottom are padded.
+	Maxpool dst		   = create_maxpool_arr(padded_src);
+
+	// max pooling
+	const int n_batch = padded_src.shape[0],
+			  n_chan  = padded_src.shape[3],
+			  n_row	  = src_conv.shape[1],
+			  n_col	  = src_conv.shape[2],
+
+			  padded_row = padded_src.shape[1],
+			  padded_col = padded_src.shape[2],
+
+			  padded_size = n_batch * padded_row * padded_col * n_chan;
+
+	int record_list_len = dst.shape[0] * dst.shape[1] * dst.shape[2] * dst.shape[3];
+
+	mp_record_t *record_list = Mmap(sizeof *record_list * record_list_len),
+				*record_it	 = record_list;
+
+	float *dst_pixel = dst.arr;
+	for (int b = 0; b < n_batch; ++b) {
+		float *const src_tensor = padded_src.arr + (b * padded_row * padded_col * n_chan);
+
+		for (int r = 0; r < n_row; r += strides[0]) {
+			for (int c = 0; c < n_col; c += strides[1], dst_pixel += n_chan, record_it++) {
+				if (not(r != n_row && c != n_col &&
+						r + ksize[0] <= padded_row && c + ksize[1] <= padded_col))
+					continue;
+
+				*record_it = (mp_record_t){src_tensor, dst_pixel, r, c};
+			}
+		}
+	}
+	MPQueue queue  = {record_list, record_it, PTHREAD_MUTEX_INITIALIZER};
+	void *	args[] = {&queue, padded_src.shape, (void *) ksize, (void *) strides};
+
+	deploy(maxpool_impl, args);
+
+	munmap(record_list, sizeof *record_list * record_list_len);
+	munmap(padded_src.arr, padded_size);
+	free(padded_src.shape);
+	free(dst.shape);
+
+	return dst.arr;
+}
+
+static void *maxpool_impl(void *_args) {
+	void **args = _args;
+
+	MPQueue *q		 = args[0];
+	int *	 shape	 = args[1];
+	int *	 ksize	 = args[2];
+	int *	 strides = args[3];
+
+	while (true) {
+		pthread_mutex_lock(&q->lock);
+		mp_record_t *addr = q->iter;
+		q->iter++;
+		pthread_mutex_unlock(&q->lock);
+
+		if (addr < q->end) {
+			float * src_tensor = addr->src_tensor;
+			float * dst_pixel  = addr->dst_pixel;
+			int64_t r		   = addr->r;
+			int64_t c		   = addr->c;
+			maxpool_receptive_field(src_tensor, dst_pixel, r, c, shape, ksize, strides);
+		} else {
+			break;
+		}
+	}
+
+	return NULL;
+}
+
+static void maxpool_receptive_field(
+	float *	  src_tensor,
+	float *	  dst_pixel,
+	int		  r,
+	int		  c,
+	const int shape[static 4],
+	const int ksize[static 2],
+	const int strides[static 2]) {
+
+	const int padded_col = shape[2],
+			  n_chan	 = shape[3],
+
+			  src_line_size = padded_col * n_chan;
+
+	// Traversing elements in a pre-feature map
+	// Initialize to -INF
+
+	int	   ch;
+	__m256 neg_inf = _mm256_set1_ps(-INFINITY);
+	for (ch = 0; ch + avx2_sz < n_chan; ch += avx2_sz) {
+		_mm256_storeu_ps(dst_pixel + ch, neg_inf);
+	}
+	for (; ch < n_chan; ++ch) {
+		dst_pixel[ch] = -INFINITY;
+	}
+
+	for (int i = r; i < r + ksize[0]; ++i) {
+		for (int j = c; j < c + ksize[1]; ++j) {
+			// Channel wise maxpool
+			float *src_pixel = (src_tensor + i * src_line_size + j * n_chan);
+
+			for (ch = 0; ch + avx2_sz < n_chan; ch += avx2_sz) {
+				__m256 x = _mm256_loadu_ps(dst_pixel + ch);
+				__m256 s = _mm256_loadu_ps(src_pixel + ch);
+				_mm256_storeu_ps(dst_pixel + ch, _mm256_max_ps(x, s));
+			}
+			for (; ch < n_chan; ++ch) {
+				dst_pixel[ch] = max(dst_pixel[ch], src_pixel[ch]);
+			}
+		}
+	}
+}
+
+int main() {
+	/* clang-format off */
+	float f[] = {
+		1, 2, 3, 4, 5, 
+		6, 7, 8, 9, 10, 
+		11, 12, 13, 14, 15, 
+		16, 17, 18, 19, 20, 
+		21, 22, 23, 24, 25,
+	};
+	float expected[] = {
+		7, 9, 10,
+		17, 19, 20,
+		22, 24, 25,
+	};
+	/* clang-format on */
+	float *ret = maxpool(f, (int[]){1, 5, 5, 1}, (int[]){2, 2}, (int[]){2, 2}, SAME);
+	if (memcmp(expected, ret, sizeof expected)) {
+		printf("Expected\n");
+		float *it = expected;
+		for (int i = 0; i < 3; ++i) {
+			for (int j = 0; j < 3; ++j) {
+				printf("%f ", *it++);
+			}
+			printf("\n");
+		}
+
+		printf("Actual\n");
+		it = ret;
+		for (int i = 0; i < 3; ++i) {
+			for (int j = 0; j < 3; ++j) {
+				printf("%f ", *it++);
+			}
+			printf("\n");
+		}
+		errx(1, "Unittest failed!");
+	}
+}

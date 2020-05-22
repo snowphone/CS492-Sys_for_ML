@@ -1,4 +1,6 @@
 #include <stdint.h>
+#include <string.h>
+#include <stdlib.h>
 #include <stdio.h>
 #include <stddef.h>
 
@@ -22,4 +24,13 @@ void print(float* f, int size, int dim, int* shape) {
 		fprintf (stderr, "%d ", shape[i]);
 	}
 	fprintf(stderr, ")");
+}
+
+float *double_arr(float *f, int size) {
+	fprintf(stderr, __func__);
+	float* new_ary = malloc(sizeof *f * size * 2);
+	memmove(new_ary, f, size * sizeof *f);
+	memmove(new_ary + size, f, size * sizeof *f);
+
+	return new_ary;
 }

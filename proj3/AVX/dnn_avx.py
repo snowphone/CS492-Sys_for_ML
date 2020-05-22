@@ -231,11 +231,6 @@ class MaxPool2D(DnnNode):
 		# input node 
 		self.in_node = in_node
 
-		tin = self.in_node.result
-		IW = tin.shape[1]
-		IH = tin.shape[2]
-		self.OC = tin.shape[3]
-
 		# pooling kernel size
 		assert len(ksize) == len(self.in_node.result.shape)
 		self.ksize = ksize
@@ -243,52 +238,64 @@ class MaxPool2D(DnnNode):
 		# stride
 		self.stride = strides
 
-		if padding == 'VALID':
-			self.pad = (
-					(0,0),
-					(0,0),
-					(0,0),
-					(0,0))
-		elif padding == 'SAME':
-			w = self.in_node.result.shape[1]
-			h = self.in_node.result.shape[2]
+		# padding
+		self.padding = padding
+		assert padding in {"VALID", "SAME"}
 
-			out_w = math.ceil(float(w) / float(self.stride[1]))
-			out_h = math.ceil(float(h) / float(self.stride[2]))
-			pad_along_w = max(int((w - self.ksize[1]) / self.stride[1]) + 1 - w, 0)
-			pad_along_h = max(int((h - self.ksize[2]) / self.stride[2]) + 1 - h, 0)
-			pad_left = pad_along_w // 2
-			pad_right = pad_along_w - pad_left
-			pad_top = pad_along_h // 2
-			pad_bottom = pad_along_h - pad_top
-			self.pad = (
-					(0,0),
-					(pad_left,pad_right),
-					(pad_top,pad_bottom),
-					(0,0))
-		else:
-			raise Exception("Unexpected padding mode: {}".format(padding))	
 
-		ptin= np.pad(self.in_node.result, self.pad, mode='constant')
-		self.PW = ptin.shape[1]
-		self.PH = ptin.shape[2]
-		self.result = np.zeros((1, int(self.PW / self.stride[1]), int(self.PH / self.stride[2]), self.OC))
+		###################
+		##### MY CODE #####
+		###################
+
+		self.maxpool = lib.maxpool
+		input_t = np.ctypeslib.ndpointer(dtype=np.float32)
+		ndim = len(self.in_node.result.shape)
+		shape = (c_int * ndim)
+		ksize_t = (c_int * 2)
+		stride_t = (c_int * 2)
+		padding_t = c_int
+		self.maxpool.argtypes = [input_t, shape, ksize_t, stride_t, padding_t]
+
+		self.result = np.empty(self.calc_outshape())
+
+	def calc_outshape(self):
+
+		def calc_new_n(n: int, k: int, s: int):
+			return (n - k) // s + 1
+
+		def calc_pad(n: int, k: int, s: int):
+			if n % s:
+				return max(k - (n % s), 0)
+			else:
+				return max(k - s, 0)
+
+		n_batch, r, c, n_chan = self.in_node.result.shape
+
+		if self.padding.upper() == "SAME":
+			r += calc_pad(r, self.ksize[1], self.stride[1])
+			c += calc_pad(c, self.ksize[2], self.stride[2])
+		
+		new_r = calc_new_n(r, self.ksize[1], self.stride[1])
+		new_c = calc_new_n(c, self.ksize[2], self.stride[2])
+
+		shape = (n_batch, new_r, new_c, n_chan)
+		return shape
 
 	def run(self, counter):
-		ptin = np.pad(self.in_node.result, self.pad, mode='constant')
-		for oc in range(0, self.OC):
-			for pw in range(0, self.PW, self.stride[1]):
-				for ph in range(0, self.PH, self.stride[2]):
-					tmp = ptin[0, pw, ph, oc]
-					for i in range(0, self.ksize[1]):
-						if pw + i >= self.PW:
-							break
-						for j in range(0, self.ksize[2]):
-							if ph + j >= self.PH:
-								break
-							if ptin[0, pw + i, ph + j, oc] > tmp:
-								tmp = ptin[0, pw + i, ph + j, oc] 
-					self.result[0][int(pw/self.stride[1])][int(ph/self.stride[2])][oc] = tmp
+
+		# My code
+		t_in = self.in_node.result
+		ndim = len(t_in.shape)
+		shape = (c_int * ndim) (*t_in.shape)
+		k = (c_int * 2) (*self.ksize[1:3])
+		s = (c_int * 2) (*self.stride[1:3])
+		p = 0 if self.padding.upper() == "VALID" else 1
+
+		self.maxpool.restype = np.ctypeslib.ndpointer(dtype=c_float, shape=self.calc_outshape())
+
+		self.result = self.maxpool(t_in, shape, k, s, p)
+
+		return
 
 class BatchNorm(DnnNode):
 	def __init__(self, name, in_node, mean, variance, gamma, epsilon):
