@@ -27,15 +27,17 @@ typedef struct Queue {
 	float *iter;
 	float *end;
 	pthread_mutex_t lock;
-	void *others;
 } Queue;
 
 static void *leaky_relu_impl(void *_arg);
-static void *batch_norm_parallel(void *_args);
+static void *batch_norm_impl(void *_args);
 static void batch_normalization_pixel(float *const pixel,
 									  const int shape[static 4],
 									  float *const mean, float *const var,
 									  float *const gamma, const float epsilon);
+static void *bias_add_impl(void *_args);
+static void bias_add_pixel(float *const arr, int shape[static 4],
+						   float *const biases);
 
 static Pool *pool = NULL;
 
@@ -45,6 +47,24 @@ static Pool *init_pool() {
 	pool->n_worker = numCPUs;
 
 	return pool;
+}
+
+/**
+ * Deploy a thread pool and block until the job is completed.
+ *
+ * @param start_routine the function that takes void* argument
+ * @param args An array of void pointers
+ */
+static void deploy(void *(*start_routine)(void *), void *args[]) {
+	if (!pool)
+		pool = init_pool();
+	for (int i = 0; i < pool->n_worker; ++i) {
+		pthread_create(pool->threads + i, NULL, start_routine, args);
+	}
+
+	for (int i = 0; i < pool->n_worker; ++i) {
+		pthread_join(pool->threads[i], NULL);
+	}
 }
 
 /**
@@ -114,27 +134,14 @@ void batch_normalization(float *const arr, const int shape[static 4],
 						 float *const mean, float *const var,
 						 float *const gamma, const float epsilon) {
 
-	if (!pool)
-		pool = init_pool();
-
 	float *end = arr + shape[0] * shape[1] * shape[2] * shape[3];
 	Queue queue = {arr, end, PTHREAD_MUTEX_INITIALIZER};
 	const void *const args[] = {&queue, shape, mean, var, gamma, &epsilon};
 
-	for (int i = 0; i < pool->n_worker; ++i) {
-		pthread_create(pool->threads + i, NULL, batch_norm_parallel,
-					   (void *)args);
-	}
-
-	for (int i = 0; i < pool->n_worker; ++i) {
-		pthread_join(pool->threads[i], NULL);
-	}
-
-	for (float *it = arr; it < end; it += shape[3]) {
-	}
+	deploy(batch_norm_impl, (void *)args);
 }
 
-static void *batch_norm_parallel(void *_args) {
+static void *batch_norm_impl(void *_args) {
 	void **args = _args;
 	Queue *q = args[0];
 	int *shape = args[1];
@@ -176,8 +183,8 @@ static void batch_normalization_pixel(float *const pixel,
 							 epsilon, epsilon, epsilon);
 	float *it = pixel;
 	int ch = 0;
-	for (ch = 0; ch < n_chan; ch += avx2_sz, it += avx2_sz) {
-		__m256 x = _mm256_loadu_ps(it);
+	for (ch = 0; ch < n_chan; ch += avx2_sz) {
+		__m256 x = _mm256_loadu_ps(it + ch);
 		__m256 m = _mm256_loadu_ps(mean + ch);
 		__m256 v = _mm256_loadu_ps(var + ch);
 		__m256 g = _mm256_loadu_ps(gamma + ch);
@@ -186,16 +193,62 @@ static void batch_normalization_pixel(float *const pixel,
 		__m256 tmp = _mm256_sqrt_ps(_mm256_add_ps(v, e));
 		x = _mm256_div_ps(_mm256_mul_ps(g, x), tmp);
 
-		_mm256_storeu_ps(it, x);
+		_mm256_storeu_ps(it + ch, x);
 	}
 
-	if (ch != n_chan) {
-		for (ch -= avx2_sz, it -= avx2_sz; ch < n_chan; ++ch, ++it) {
-			float x = *it;
-			x = gamma[ch] * (x - mean[ch]) / sqrt(var[ch] + epsilon);
-			*it++ = x;
-		}
+	for (; ch < n_chan; ++ch) {
+		float x = it[ch];
+		x = gamma[ch] * (x - mean[ch]) / sqrt(var[ch] + epsilon);
+		it[ch] = x;
 	}
 
 	return;
 }
+
+void bias_add(float *const arr, int shape[static 4], float *const biases) {
+	const int size = shape[0] * shape[1] * shape[2] * shape[3];
+	Queue queue = {arr, arr + size, PTHREAD_MUTEX_INITIALIZER};
+	void *args[] = {&queue, shape, biases};
+
+	deploy(bias_add_impl, (void *)args);
+}
+
+static void *bias_add_impl(void *_args) {
+	void **args = _args;
+	Queue *q = args[0];
+	int *shape = args[1];
+	float *biases = args[2];
+
+	while (1) {
+		pthread_mutex_lock(&q->lock);
+		float *arr = q->iter;
+		q->iter += shape[3];
+		pthread_mutex_unlock(&q->lock);
+
+		if (arr < q->end)
+			bias_add_pixel(arr, shape, biases);
+		else
+			break;
+	}
+
+	return NULL;
+}
+
+static void bias_add_pixel(float *const arr, int shape[static 4],
+						   float *const biases) {
+	const int size = shape[0] * shape[1] * shape[2] * shape[3],
+			  n_chan = shape[3];
+	const float *const end = arr + size;
+
+	int ch = 0;
+	for (ch = 0; ch < n_chan - avx2_sz; ch += avx2_sz) {
+		__m256 x = _mm256_loadu_ps(arr + ch);
+		__m256 b = _mm256_loadu_ps(biases + ch);
+		_mm256_storeu_ps(arr + ch, _mm256_add_ps(x, b));
+	}
+
+	for (; ch < n_chan; ++ch) {
+		arr[ch] = arr[ch] + biases[ch];
+	}
+}
+

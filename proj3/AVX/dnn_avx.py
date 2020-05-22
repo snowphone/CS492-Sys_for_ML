@@ -210,14 +210,18 @@ class BiasAdd(DnnNode):
 		assert self.biases.shape[-1] == self.OC 
 
 		self.result = self.in_node.result 
+		self.bias_add = lib.bias_add
+		ptr_t = ndpointer(np.float32)
+		self.ndim = len(tin.shape)
+		self.bias_add.argtypes = [ptr_t, c_int * self.ndim, ptr_t]
+
 
 	def run(self, counter):
-		tin = self.in_node.result
-		self.result = np.zeros((1, self.OW, self.OH, self.OC))
-		for ow in range(0, self.OW):
-			for oh in range(0, self.OH):
-				for oc in range(0, self.OC):
-					self.result[0][ow][oh][oc] = tin[0][ow][oh][oc] + self.biases[oc]
+		self.result = self.in_node.result.astype(np.float32)
+		shape = (c_int * self.ndim) (*self.result.shape)
+		self.bias_add(self.result, shape, self.biases)
+
+		return
 
 
 class MaxPool2D(DnnNode):
