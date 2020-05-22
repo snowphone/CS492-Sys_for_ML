@@ -5,8 +5,18 @@ import networkx as nx
 import numpy as np
 from itertools import product
 from multiprocessing import Process, sharedctypes
+from ctypes import *
 
 parallelism = 8
+mylib = cdll.LoadLibrary('./openblas.so')
+mylib.openblas_sgemm.argtypes = [c_int, c_int, c_int,
+        np.ctypeslib.ndpointer(c_float, flags="C_CONTIGUOUS"),
+        np.ctypeslib.ndpointer(c_float, flags="C_CONTIGUOUS"),
+        np.ctypeslib.ndpointer(c_float, flags="C_CONTIGUOUS")]  
+mylib.openblas_dgemm.argtypes = [c_int, c_int, c_int,
+        np.ctypeslib.ndpointer(c_double, flags="C_CONTIGUOUS"),
+        np.ctypeslib.ndpointer(c_double, flags="C_CONTIGUOUS"),
+        np.ctypeslib.ndpointer(c_double, flags="C_CONTIGUOUS")]
 
 class DnnInferenceEngine(object):
 	def __init__(self, graph, debug):
@@ -31,7 +41,7 @@ class DnnInferenceEngine(object):
 						skip_current = True
 				if skip_current:
 					continue
-				
+                                #Delete print				
 				print("Start running Layer: {}, counter: {}".format(current.name, counter))
 				current.run(counter)
 				print("Done")

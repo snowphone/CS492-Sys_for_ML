@@ -1,5 +1,5 @@
-#include <stdint.h>
 #include <stdio.h>
+#include <stdint.h>
 #include <stddef.h>
 
 void add_float_p(float a, float b, float *c) {
