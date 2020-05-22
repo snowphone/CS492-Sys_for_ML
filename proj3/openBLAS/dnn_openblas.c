@@ -1,5 +1,6 @@
 #include <stdio.h>
 #include <cblas.h>
+#include <stdlib.h>
 
 void openblas_sgemm(int M, int N, int K, float *A, float *B, float *C)
 {
@@ -37,9 +38,9 @@ void conv2D(int PW, int PH, int KW, int KH, int IC, int OC, int SW, int SH, int 
 	{
 		double* matA = malloc((o_size * k_size) * sizeof(double));
 			
-		for(int ow = 0; i < OW; i++)
+		for(int ow = 0; ow < OW; i++)
 		{
-			for(int oh  = 0; j < OH; j++)
+			for(int oh  = 0; oh < OH; j++)
 			{
 				r_idx = ow * OH + oh;
 				for(int i = 0; i < KW; i++)
