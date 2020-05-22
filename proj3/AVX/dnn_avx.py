@@ -3,13 +3,18 @@ import sys
 import math
 import networkx as nx
 import numpy as np
+from numpy.ctypeslib import ndpointer
 from itertools import product
 from multiprocessing import Process, sharedctypes
+
+from ctypes import *
+
+lib = cdll.LoadLibrary("./libdnn.so")
 
 parallelism = 8
 
 class DnnInferenceEngine(object):
-	def __init__(self, graph, debug):
+	def __init__(self, graph, debug=False):
 		self.g = graph
 		self.debug = debug
 
@@ -302,36 +307,43 @@ class BatchNorm(DnnNode):
 		
 		self.result = self.in_node.result
 
+		self.batch_normalization = lib.batch_normalization
+		ptr_t = ndpointer(np.float32)
+		ndim = len(tin.shape)
+		self.batch_normalization.argtypes = [ptr_t, c_int * ndim, ptr_t, ptr_t, ptr_t, c_float]
+
 	def run(self, counter):
-		tin = self.in_node.result
-		self.result = np.zeros((1, self.OW, self.OH, self.OC))
-		for ow in range(0, self.OW):
-			for oh in range(0, self.OH):
-				for oc in range(0, self.OC):
-					self.result[0][ow][oh][oc] \
-						= (tin[0][ow][oh][oc] - self.mean[oc]) * self.gamma[oc] / \
-							math.sqrt(self.variance[oc] + self.epsilon)
+		self.result = self.in_node.result.astype(np.float32)
+
+		shape = (c_int * len(self.result.shape)) (*self.result.shape)
+		mean = self.mean.astype(np.float32)
+		var = self.variance.astype(np.float32)
+		gamma = self.gamma.astype(np.float32)
+		epsilon = self.epsilon
+
+		self.batch_normalization(self.result, shape, mean, var, gamma, epsilon)
+
 
 class LeakyReLU(DnnNode):
 	def __init__(self, name, in_node):
 		self.name = name
 
 		self.in_node = in_node
+		self.result = in_node.result
 
-		tin = self.in_node.result
-		self.OW = tin.shape[1]
-		self.OH = tin.shape[2]
-		self.OC = tin.shape[3]
+		self.leaky_relu = lib.leaky_relu
+		pointer_t = ndpointer(np.float32, ndim=4)
+		self.leaky_relu.argtypes = [pointer_t, c_int]
 
-		self.result = self.in_node.result
+		return
+
+
 
 	def run(self, counter):
-		tin = self.in_node.result
-		self.result = np.zeros((1, self.OW, self.OH, self.OC))
-		for ow in range(0, self.OW):
-			for oh in range(0, self.OH):
-				for oc in range(0, self.OC):
-					self.result[0][ow][oh][oc] = max(tin[0][ow][oh][oc], .1 * tin[0][ow][oh][oc])
+		self.result = self.in_node.result.astype(np.float32)
+		self.leaky_relu(self.result, self.result.size)
+		return
+
 
 class Input(DnnNode):
 	def __init__(self, name, in_shape):
