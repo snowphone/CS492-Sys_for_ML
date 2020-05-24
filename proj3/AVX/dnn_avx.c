@@ -1,7 +1,6 @@
 #include <assert.h>
 #include <err.h>
 #include <errno.h>
-#include <iso646.h>
 #include <math.h>
 #include <stdbool.h>
 #include <stddef.h>
@@ -62,6 +61,16 @@ typedef struct MPQueue {
 	pthread_mutex_t lock;
 } MPQueue;
 
+typedef struct cv_record_t {
+	float *receptive_field;
+	float *dst;
+} cv_record_t;
+
+typedef struct CVQueue {
+	cv_record_t *	iter;
+	cv_record_t *	end;
+	pthread_mutex_t lock;
+} CVQueue;
 
 static void *leaky_relu_impl(void *_arg);
 
@@ -77,21 +86,32 @@ static void *bias_add_impl(void *_args);
 static void	 bias_add_pixel(float *const arr, int shape[static 4], float *const biases);
 
 static void *maxpool_impl(void *_args);
-static void maxpool_receptive_field(
-	float *	  src_tensor,
-	float *	  dst,
-	int		  r,
-	int		  c,
-	const int shape[static 4],
-	const int ksize[static 2],
-	const int strides[static 2]);
+static void	 maxpool_receptive_field(
+	 float *   src_tensor,
+	 float *   dst,
+	 int	   r,
+	 int	   c,
+	 const int shape[static 4],
+	 const int ksize[static 2],
+	 const int strides[static 2]);
 
+static void *matmul_impl(void *_args);
+static void	 matmul(const float *restrict receptive_field,
+					const float *restrict weight,
+					float *restrict		  dst,
+
+					const int n_strides,
+					const int kernel_len,
+					const int dst_chan);
 
 static Pool *pool = NULL;
 
+static int get_num_cpus() {
+	return sysconf(_SC_NPROCESSORS_ONLN);
+}
 
 static Pool *init_pool() {
-	const int numCPUs = sysconf(_SC_NPROCESSORS_ONLN);
+	const int numCPUs = get_num_cpus();
 	Pool *	  pool	  = malloc(sizeof pool + numCPUs * sizeof(pthread_t));
 	pool->n_worker	  = numCPUs;
 
@@ -409,14 +429,86 @@ static Maxpool pad(Maxpool src, padding_t option) {
 
 		return padded;
 	}
-	case CONVOLVING:
-		//TODO
-		errx(ENOSYS, "Not yet implemented");
-	default:
-		errx(EINVAL, "Invalid argument");
-	}
+	case CONVOLVING: {
+		if (src.padding == VALID) {
+			const int n_batch = src.shape[0],
+					  n_row	  = src.shape[1],
+					  n_col	  = src.shape[2],
+					  n_chan  = src.shape[3],
+					  size	  = n_batch * n_row * n_col * n_chan;
 
-	return (Maxpool){};
+			Maxpool dst = {
+				.arr	 = Mmap(sizeof(float) * size),
+				.shape	 = malloc(sizeof(int) * 4),
+				.ksize	 = src.ksize,
+				.strides = src.strides,
+				.padding = src.padding,
+			};
+			memmove(dst.arr, src.arr, sizeof(float) * size);
+			memmove(dst.shape, src.shape, sizeof(int) * 4);
+
+			return dst;
+		} else {
+			const int n_batch = src.shape[0],
+					  n_row	  = src.shape[1],
+					  n_col	  = src.shape[2],
+					  n_chan  = src.shape[3],
+
+					  r_pad = ((src.strides[0] - 1) * n_row - 1 + src.ksize[0]) / 2,
+					  c_pad = ((src.strides[1] - 1) * n_col - 1 + src.ksize[1]) / 2,
+
+					  padded_row  = 2 * r_pad + n_row,
+					  padded_col  = 2 * c_pad + n_col,
+					  padded_size = n_batch * padded_row * padded_col * n_chan;
+
+			Maxpool dst = {
+				.arr	 = Mmap(sizeof(float) * padded_size),
+				.shape	 = malloc(sizeof(int) * 4),
+				.ksize	 = src.ksize,
+				.strides = src.strides,
+				.padding = src.padding,
+			};
+
+			memmove(dst.shape, (int[]){n_batch, padded_row, padded_col, n_chan}, sizeof(int) * 4);
+
+			const int vertical_pad_len	 = c_pad * padded_col * n_chan,
+					  horizontal_pad_len = r_pad * n_chan,
+					  src_line_size		 = n_col * n_chan;
+
+			float *dst_it = dst.arr;
+			float *src_it = src.arr;
+			for (int b = 0; b < n_batch; ++b) {
+
+				// Up
+				memset(dst_it, 0, sizeof(float) * vertical_pad_len);
+				dst_it += vertical_pad_len;
+
+				for (int r = 0; r < n_row; ++r) {
+					// Left
+					memset(dst_it, 0, sizeof(float) * horizontal_pad_len);
+					dst_it += horizontal_pad_len;
+
+					memmove(dst_it, src_it, sizeof(float) * src_line_size);
+
+					dst_it += src_line_size;
+					src_it += src_line_size;
+
+					// Right
+					memset(dst_it, 0, sizeof(float) * horizontal_pad_len);
+					dst_it += horizontal_pad_len;
+				}
+
+				// Bottom
+				memset(dst_it, 0, sizeof(float) * vertical_pad_len);
+				dst_it += vertical_pad_len;
+			}
+
+			return dst;
+		}
+	}
+	default:
+		errx(EINVAL, "%s %d: Invalid argument", __func__, __LINE__);
+	}
 }
 
 float *maxpool(const float src[],
@@ -450,8 +542,8 @@ float *maxpool(const float src[],
 
 		for (int r = 0; r < n_row; r += strides[0]) {
 			for (int c = 0; c < n_col; c += strides[1], dst_pixel += n_chan, record_it++) {
-				if (not(r != n_row && c != n_col &&
-						r + ksize[0] <= padded_row && c + ksize[1] <= padded_col))
+				if (!(r != n_row && c != n_col &&
+					  r + ksize[0] <= padded_row && c + ksize[1] <= padded_col))
 					continue;
 
 				*record_it = (mp_record_t){src_tensor, dst_pixel, r, c};
@@ -500,13 +592,13 @@ static void *maxpool_impl(void *_args) {
 }
 
 static void maxpool_receptive_field(
-	float *	  src_tensor,
-	float *	  dst_pixel,
-	int		  r,
-	int		  c,
-	const int shape[static 4],
-	const int ksize[static 2],
-	const int strides[static 2]) {
+	float *restrict src_tensor,
+	float *restrict dst_pixel,
+	const int		r,
+	const int		c,
+	const int		shape[static 4],
+	const int		ksize[static 2],
+	const int		strides[static 2]) {
 
 	const int padded_col = shape[2],
 			  n_chan	 = shape[3],
@@ -516,8 +608,9 @@ static void maxpool_receptive_field(
 	// Traversing elements in a pre-feature map
 	// Initialize to -INF
 
-	int	   ch;
 	__m256 neg_inf = _mm256_set1_ps(-INFINITY);
+
+	int ch;
 	for (ch = 0; ch + avx2_sz < n_chan; ch += avx2_sz) {
 		_mm256_storeu_ps(dst_pixel + ch, neg_inf);
 	}
@@ -542,40 +635,137 @@ static void maxpool_receptive_field(
 	}
 }
 
-int main() {
-	/* clang-format off */
-	float f[] = {
-		1, 2, 3, 4, 5, 
-		6, 7, 8, 9, 10, 
-		11, 12, 13, 14, 15, 
-		16, 17, 18, 19, 20, 
-		21, 22, 23, 24, 25,
-	};
-	float expected[] = {
-		7, 9, 10,
-		17, 19, 20,
-		22, 24, 25,
-	};
-	/* clang-format on */
-	float *ret = maxpool(f, (int[]){1, 5, 5, 1}, (int[]){2, 2}, (int[]){2, 2}, SAME);
-	if (memcmp(expected, ret, sizeof expected)) {
-		printf("Expected\n");
-		float *it = expected;
-		for (int i = 0; i < 3; ++i) {
-			for (int j = 0; j < 3; ++j) {
-				printf("%f ", *it++);
-			}
-			printf("\n");
-		}
+float *conv2d(
+	float *restrict src,
+	const int		shape[static 4],
+	float *restrict weight,
+	const int		k_shape[static 4],
+	const int		strides[static 2],
+	padding_t		padding) {
 
-		printf("Actual\n");
-		it = ret;
-		for (int i = 0; i < 3; ++i) {
-			for (int j = 0; j < 3; ++j) {
-				printf("%f ", *it++);
+	const int ksize[2]	 = {k_shape[0], k_shape[1]};
+	Maxpool	  _src		 = {src, (void *) shape, ksize, strides, padding};
+	Maxpool	  padded_src = pad(_src, CONVOLVING);
+
+	const int n_batch = shape[0],
+			  n_row	  = shape[1],
+			  n_col	  = shape[2],
+			  n_chan  = shape[3],
+
+			  padded_row = padded_src.shape[1],
+			  padded_col = padded_src.shape[2],
+
+			  dst_row  = (padded_row - k_shape[0]) / strides[0] + 1,
+			  dst_col  = (padded_col - k_shape[1]) / strides[1] + 1,
+			  dst_chan = k_shape[3],
+			  dst_size = n_batch * dst_row * dst_col * dst_chan,
+
+			  src_tensor_size = padded_row * padded_col * n_chan,
+			  src_line_size	  = padded_col * n_chan;
+
+	float *dst = Mmap(sizeof(float) * dst_size);
+
+	float *	  dst_iter	 = dst;
+	float *	  src_tensor = padded_src.arr;
+	const int kernel_len = k_shape[0] * k_shape[1] * n_chan,
+			  n_strides	 = dst_row * dst_col;
+
+	float *receptive_fields = Mmap(sizeof(float) * kernel_len * n_strides);
+	for (int b = 0; b < n_batch; ++b, src_tensor += b * src_tensor_size) {
+		float *field_it = receptive_fields;
+
+		for (int r = 0; r < n_row; r += strides[0]) {
+			for (int c = 0; c < n_col; c += strides[1]) {
+				if (!(r != n_row && c != n_col &&
+					  r + k_shape[0] <= padded_row && c + k_shape[1] <= padded_col))
+					continue;
+
+				// Copy each receptive field to 1-d array
+				float *src_line = src_tensor + r * src_line_size + c * n_chan;
+				for (int i = r; i < r + k_shape[0]; ++i) {
+					const int line_len = k_shape[1] * n_chan;
+					memmove(field_it, src_line, sizeof(float) * line_len);
+					field_it += line_len;
+					src_line += src_line_size;
+				}
+
+				// Calculate conv operation
+				// weight: (dst_chan, ffc)
+				// receptive field: (ffc, n_strides)
 			}
-			printf("\n");
 		}
-		errx(1, "Unittest failed!");
+		cv_record_t *records = Mmap(sizeof *records * n_strides);
+		for (int i = 0; i < n_strides; ++i) {
+			records[i] = (cv_record_t){
+				&receptive_fields[i * kernel_len],
+				&dst_iter[i * dst_chan],
+			};
+		}
+		CVQueue queue  = {records, records + n_strides, PTHREAD_MUTEX_INITIALIZER};
+		void *	args[] = {&queue, weight, (void *) &kernel_len, (void *) &dst_chan};
+		deploy(matmul_impl, args);
+
+		dst_iter += dst_chan * n_strides;
+	}
+
+	munmap(receptive_fields, sizeof(float) * n_strides * kernel_len);
+	munmap(padded_src.arr, sizeof(float) * n_batch * padded_row * padded_col * n_chan);
+	free(padded_src.shape);
+	return dst;
+}
+
+static void *matmul_impl(void *_args) {
+	void **	  args		 = _args;
+	CVQueue * q			 = args[0];
+	float *	  weight	 = args[1];
+	const int kernel_len = *(int *) args[2],
+			  dst_chan	 = *(int *) args[3];
+
+	while (true) {
+
+		pthread_mutex_lock(&q->lock);
+		cv_record_t *it = q->iter++;
+		pthread_mutex_unlock(&q->lock);
+		if (q->iter >= q->end)
+			break;
+
+		matmul(it->receptive_field, weight, it->dst, 1, kernel_len, dst_chan);
+	}
+
+	return NULL;
+}
+
+static void matmul(const float *restrict receptive_field,
+				   const float *restrict weight,
+				   float *restrict		 dst,
+
+				   const int n_strides,
+				   const int kernel_len,
+				   const int dst_chan) {
+	memset(dst, 0, sizeof(float) * n_strides * dst_chan);
+
+	for (int j = 0; j < kernel_len; ++j) {
+		float *rhs_line = (float *) &weight[j * dst_chan];
+
+		for (int i = 0; i < n_strides; ++i) {
+			float  x		= receptive_field[i * kernel_len + j];
+			__m256 xv		= _mm256_set1_ps(x);
+			float *dst_line = &dst[i * dst_chan];
+
+			int k;
+			for (k = 0; k + avx2_sz < dst_chan; k += avx2_sz) {
+
+				__m256 kv	= _mm256_loadu_ps(dst_line + k);
+				__m256 rhsv = _mm256_loadu_ps(rhs_line + k);
+				kv			= _mm256_add_ps(kv, _mm256_mul_ps(xv, rhsv));
+
+				_mm256_storeu_ps(dst_line + k, kv);
+			}
+
+			for (; k < dst_chan; ++k) {
+				dst_line[k] += x * rhs_line[k];
+			}
+		}
 	}
 }
+

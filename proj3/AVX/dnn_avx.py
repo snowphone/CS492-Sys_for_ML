@@ -121,19 +121,12 @@ class DnnNode(object):
 		self.result = None 
 
 class Conv2D(DnnNode):
-	def __init__(self, name, in_node, kernel, strides, padding):
+	def __init__(self, name, in_node, kernel: np.ndarray, strides, padding):
 		self.name = name
 		
 		# input node
 		self.in_node = in_node
 
-		# weights
-		self.weights = kernel
-		assert len(self.weights.shape) == 4
-		if len(self.in_node.result.shape) < 3:
-			input_channels = 1
-		else:
-			input_channels = self.in_node.result.shape[-1]
 
 		# strides
 		if strides is None:
@@ -142,58 +135,57 @@ class Conv2D(DnnNode):
 		self.strides = strides
 
 		# padding
-		if padding == 'SAME':
-			self.pad = (
-					(0,0),
-					(self.weights.shape[0]//2, self.weights.shape[0]//2),
-					(self.weights.shape[1]//2, self.weights.shape[1]//2),
-					(0,0)
-					)
-		elif padding == 'VALID':
-			self.pad = ((0,0), (0,0), (0,0), (0,0))
-		else:
-			assert len(padding) == 2
-			self.pad = padding
+		assert padding.upper() in {"VALID", "SAME"}
+		self.padding = padding
 			
-		ptin = np.pad(self.in_node.result, self.pad, mode='constant')
-		self.PW = ptin.shape[1]
-		self.PH = ptin.shape[2]
-		self.KW = self.weights.shape[0]
-		self.KH = self.weights.shape[1]
-		self.IC = self.weights.shape[2]
-		self.OC = self.weights.shape[3]
-		self.SW = self.strides[1]
-		self.SH = self.strides[2]
-		self.OW = int((self.PW - self.KW) / self.SW + 1)
-		self.OH = int((self.PH - self.KH) / self.SH + 1)
 
-		self.result = np.zeros((1, self.OW, self.OH, self.OC))
-		tmp_result = np.ctypeslib.as_ctypes(self.result)
-		self.shm_result = sharedctypes.RawArray(tmp_result._type_, tmp_result)
+		self.kernel = kernel.astype(np.float32, order="C")
+		assert len(self.kernel.shape) == 4
+
+
+		self.conv2d = lib.conv2d
+		ptr_t = ndpointer(dtype=np.float32)
+		shape_t = (c_int * 4)
+		kernel_t = ptr_t
+		stride_t = (c_int * 2)
+		padding_t = c_int
+
+		self.conv2d.argtypes = [ptr_t, shape_t, kernel_t, shape_t, stride_t, padding_t]
+
+		self.result = np.empty(self.calc_new_shape())
+		return
+
+	def calc_new_shape(self):
+		i = self.in_node.result
+		n_batch = i.shape[0]
+		n_row = i.shape[1]
+		n_col = i.shape[2]
+		if self.padding.upper() == "VALID":
+			n_row = (n_row - self.kernel.shape[0]) // self.strides[1] + 1
+			n_col = (n_col - self.kernel.shape[1]) // self.strides[2] + 1
+
+		n_chan = self.kernel.shape[3]
+		return (n_batch, n_row, n_col, n_chan)
+
 
 	def run(self, counter):
 		print("Start of layer: {}".format(self.name))
-		ptins = []
-		for i in range(0, parallelism):
-			ptins.append(np.pad(self.in_node.result, self.pad, mode='constant'))
-		for chunk in range(0, int(self.OC / parallelism) + 1):
-			pool = [Process(target=self.run_for_oc, args=(ptins[k], chunk, k)) for k in range(min(parallelism * (chunk+1), self.OC) - parallelism * chunk)]
-			for j in range(min(parallelism * (chunk + 1), self.OC) - parallelism * chunk):
-				pool[j].start()
-			for p in pool:
-				p.join()
-		self.result = np.ctypeslib.as_array(self.shm_result)
 
-	def run_for_oc(self, ptin, chunk, k):
-		oc = chunk * parallelism + k
-		shared_result = np.ctypeslib.as_array(self.shm_result)	   
 
-		for ic in range(0, self.IC):
-			for ow in range(0, self.OW):
-				for oh in range(0, self.OH):
-					for ii, i in enumerate(range(self.SW * ow, self.SW * ow + self.KW)):
-						for jj, j in enumerate(range(self.SH * oh, self.SH * oh + self.KH)):
-							shared_result[0, ow, oh, oc] += ptin[0, i, j, ic] * self.weights[ii, jj, ic, oc]
+		
+		t_in = self.in_node.result.astype(np.float32, order='C')
+		shape = (c_int * 4) (*t_in.shape)
+		k = self.kernel
+		k_shape = (c_int * 4) (*k.shape)
+		s = (c_int * 2) (*self.strides[1:3])
+		padding_enum = 0 if self.padding.upper() == "VALID" else 1
+
+		self.conv2d.restype = ndpointer(dtype=np.float32, shape=self.calc_new_shape())
+
+		self.result = self.conv2d(t_in, shape, k, k_shape, s, padding_enum)
+
+		return
+
 
 class BiasAdd(DnnNode):
 	def __init__(self, name, in_node, biases):
