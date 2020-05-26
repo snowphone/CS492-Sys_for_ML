@@ -12,7 +12,7 @@ void conv2D(int PW, int PH, int KW, int KH, int IC, int OC, int SW, int SH, int 
 	// Iterating the input channel and accumulate all of the results, the convolution is done.
 	// In the matrix multiplication, we set beta value as 1, so the dgemm does C = A x B + C, so accumulation is naturally done.
 
-	int o_size = OW * OH, k_size = KW * KH, i_size = PW * PH;
+	int o_size = OW * OH, k_size = KW * KH;
 	int r_idx, c_idx, b_idx, w_idx;
 
 	for(int ic = 0; ic < IC; ic++)
