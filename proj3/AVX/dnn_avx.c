@@ -190,7 +190,7 @@ static void *leaky_relu_impl(void *_arg) {
 
 	__m256 alpha = _mm256_set_ps(0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1);
 	float *it;
-	for (it = arr; it < src_end; it += avx2_sz) {
+	for (it = arr; it + avx2_sz < src_end; it += avx2_sz) {
 		__m256 v_src = _mm256_loadu_ps(it);
 
 		__m256 alpha_src = _mm256_mul_ps(alpha, v_src);
@@ -199,11 +199,9 @@ static void *leaky_relu_impl(void *_arg) {
 		_mm256_storeu_ps(it, v_max);
 	}
 
-	if (it != src_end) {
-		// Not aligned to 32 bytes (8 floats)
-		for (it -= avx2_sz; it < src_end; ++it) {
-			*it = max(*it, *it * 0.1);
-		}
+	// Not aligned to 32 bytes (8 floats)
+	for (; it < src_end; ++it) {
+		*it = max(*it, *it * 0.1);
 	}
 
 	return NULL;
