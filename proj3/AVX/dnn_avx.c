@@ -670,7 +670,9 @@ float *conv2d(
 	const int kernel_len = k_shape[0] * k_shape[1] * n_chan,
 			  n_strides	 = dst_row * dst_col;
 
-	float *receptive_fields = Mmap(sizeof(float) * kernel_len * n_strides);
+	float *		 receptive_fields = Mmap(sizeof(float) * kernel_len * n_strides);
+	cv_record_t *records		  = Mmap(sizeof *records * n_strides);
+
 	for (int b = 0; b < n_batch; ++b, src_tensor += b * src_tensor_size) {
 		float *field_it = receptive_fields;
 
@@ -694,7 +696,6 @@ float *conv2d(
 				// receptive field: (ffc, n_strides)
 			}
 		}
-		cv_record_t *records = Mmap(sizeof *records * n_strides);
 		for (int i = 0; i < n_strides; ++i) {
 			records[i] = (cv_record_t){
 				&receptive_fields[i * kernel_len],
@@ -726,10 +727,11 @@ static void *matmul_impl(void *_args) {
 		pthread_mutex_lock(&q->lock);
 		cv_record_t *it = q->iter++;
 		pthread_mutex_unlock(&q->lock);
-		if (q->iter >= q->end)
-			break;
 
-		matmul(it->receptive_field, weight, it->dst, 1, kernel_len, dst_chan);
+		if (it < q->end)
+			matmul(it->receptive_field, weight, it->dst, 1, kernel_len, dst_chan);
+		else
+			break;
 	}
 
 	return NULL;
@@ -768,4 +770,3 @@ static void matmul(const float *restrict receptive_field,
 		}
 	}
 }
-
