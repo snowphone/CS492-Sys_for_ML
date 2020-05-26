@@ -8,6 +8,6 @@
   - [ ] bias
   - [ ] max pool
   - [ ] conv2d
-- [ ] OpenBLAS
+- [x] OpenBLAS
 - [ ] CUDA
 - [ ] cuBLAS
