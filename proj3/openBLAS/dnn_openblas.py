@@ -9,11 +9,8 @@ from ctypes import *
 
 parallelism = 8
 mylib = cdll.LoadLibrary('./openblas.so')
-mylib.openblas_sgemm.argtypes = [c_int, c_int, c_int,
-        np.ctypeslib.ndpointer(c_float, flags="C_CONTIGUOUS"),
-        np.ctypeslib.ndpointer(c_float, flags="C_CONTIGUOUS"),
-        np.ctypeslib.ndpointer(c_float, flags="C_CONTIGUOUS")]  
-mylib.openblas_dgemm.argtypes = [c_int, c_int, c_int,
+mylib.conv2D.argtypes = [c_int, c_int, c_int, c_int, c_int,
+			 c_int, c_int, c_int, c_int, c_int,
         np.ctypeslib.ndpointer(c_double, flags="C_CONTIGUOUS"),
         np.ctypeslib.ndpointer(c_double, flags="C_CONTIGUOUS"),
         np.ctypeslib.ndpointer(c_double, flags="C_CONTIGUOUS")]
@@ -41,10 +38,7 @@ class DnnInferenceEngine(object):
 						skip_current = True
 				if skip_current:
 					continue
-                                #Delete print				
-				print("Start running Layer: {}, counter: {}".format(current.name, counter))
 				current.run(counter)
-				print("Done")
 				if not isinstance(current, Input):
 					if self.debug:
 						path = os.path.join("intermediate", "layer_{}.npy".format(counter))
@@ -173,32 +167,15 @@ class Conv2D(DnnNode):
 		self.OH = int((self.PH - self.KH) / self.SH + 1)
 
 		self.result = np.zeros((1, self.OW, self.OH, self.OC))
-		tmp_result = np.ctypeslib.as_ctypes(self.result)
-		self.shm_result = sharedctypes.RawArray(tmp_result._type_, tmp_result)
 
 	def run(self, counter):
-		print("Start of layer: {}".format(self.name))
-		ptins = []
-		for i in range(0, parallelism):
-			ptins.append(np.pad(self.in_node.result, self.pad, mode='constant'))
-		for chunk in range(0, int(self.OC / parallelism) + 1):
-			pool = [Process(target=self.run_for_oc, args=(ptins[k], chunk, k)) for k in range(min(parallelism * (chunk+1), self.OC) - parallelism * chunk)]
-			for j in range(min(parallelism * (chunk + 1), self.OC) - parallelism * chunk):
-				pool[j].start()
-			for p in pool:
-				p.join()
-		self.result = np.ctypeslib.as_array(self.shm_result)
-
-	def run_for_oc(self, ptin, chunk, k):
-		oc = chunk * parallelism + k
-		shared_result = np.ctypeslib.as_array(self.shm_result)	   
-
-		for ic in range(0, self.IC):
-			for ow in range(0, self.OW):
-				for oh in range(0, self.OH):
-					for ii, i in enumerate(range(self.SW * ow, self.SW * ow + self.KW)):
-						for jj, j in enumerate(range(self.SH * oh, self.SH * oh + self.KH)):
-							shared_result[0, ow, oh, oc] += ptin[0, i, j, ic] * self.weights[ii, jj, ic, oc]
+		ptin = np.pad(self.in_node.result, self.pad, mode='constant')
+		ptin = ptin.astype(np.float64).flatten()
+		self.weights = self.weights.astype(np.float64).flatten()
+		self.result = self.result.astype(np.float64).flatten()
+		mylib.conv2D(self.PW, self.PH, self.KW, self.KH, self.IC, self.OC, self.SW, self.SH, self.OW, self.OH, ptin, self.weights, self.result)
+		self.result = self.result.reshape((1, self.OW, self.OH, self.OC))	
+		# Assumed batch = 1		
 
 class BiasAdd(DnnNode):
 	def __init__(self, name, in_node, biases):
@@ -223,8 +200,7 @@ class BiasAdd(DnnNode):
 			for oh in range(0, self.OH):
 				for oc in range(0, self.OC):
 					self.result[0][ow][oh][oc] = tin[0][ow][oh][oc] + self.biases[oc]
-
-
+	
 class MaxPool2D(DnnNode):
 	def __init__(self, name, in_node, ksize, strides, padding):
 		self.name = name
@@ -290,7 +266,7 @@ class MaxPool2D(DnnNode):
 							if ptin[0, pw + i, ph + j, oc] > tmp:
 								tmp = ptin[0, pw + i, ph + j, oc] 
 					self.result[0][int(pw/self.stride[1])][int(ph/self.stride[2])][oc] = tmp
-
+	
 class BatchNorm(DnnNode):
 	def __init__(self, name, in_node, mean, variance, gamma, epsilon):
 		self.name = name
@@ -321,7 +297,7 @@ class BatchNorm(DnnNode):
 					self.result[0][ow][oh][oc] \
 						= (tin[0][ow][oh][oc] - self.mean[oc]) * self.gamma[oc] / \
 							math.sqrt(self.variance[oc] + self.epsilon)
-
+	
 class LeakyReLU(DnnNode):
 	def __init__(self, name, in_node):
 		self.name = name
@@ -342,7 +318,7 @@ class LeakyReLU(DnnNode):
 			for oh in range(0, self.OH):
 				for oc in range(0, self.OC):
 					self.result[0][ow][oh][oc] = max(tin[0][ow][oh][oc], .1 * tin[0][ow][oh][oc])
-
+	
 class Input(DnnNode):
 	def __init__(self, name, in_shape):
 		self.name = name
@@ -355,5 +331,4 @@ class Input(DnnNode):
 
 	def run(self, counter):
 		pass
-
 
