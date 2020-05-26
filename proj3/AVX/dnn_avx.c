@@ -706,6 +706,7 @@ float *conv2d(
 		dst_iter += dst_chan * n_strides;
 	}
 
+	munmap(records, sizeof *records * n_strides);
 	munmap(receptive_fields, sizeof(float) * n_strides * kernel_len);
 	munmap(padded_src.arr, sizeof(float) * n_batch * padded_row * padded_col * n_chan);
 	free(padded_src.shape);
