@@ -25,7 +25,7 @@ typedef enum {
 #define max(x, y) ((x) > (y) ? (x) : (y))
 
 typedef struct Pool {
-	size_t	  n_worker;
+	int	  n_worker;
 	pthread_t threads[];
 } Pool;
 
@@ -92,8 +92,7 @@ static void	 maxpool_receptive_field(
 	 int	   r,
 	 int	   c,
 	 const int shape[static 4],
-	 const int ksize[static 2],
-	 const int strides[static 2]);
+	 const int ksize[static 2]);
 
 static void *matmul_impl(void *_args);
 static void	 matmul(const float *restrict receptive_field,
@@ -541,17 +540,17 @@ float *maxpool(const float src[],
 		float *const src_tensor = padded_src.arr + (b * padded_row * padded_col * n_chan);
 
 		for (int r = 0; r < n_row; r += strides[0]) {
-			for (int c = 0; c < n_col; c += strides[1], dst_pixel += n_chan, record_it++) {
+			for (int c = 0; c < n_col; c += strides[1], dst_pixel += n_chan) {
 				if (!(r != n_row && c != n_col &&
 					  r + ksize[0] <= padded_row && c + ksize[1] <= padded_col))
 					continue;
 
-				*record_it = (mp_record_t){src_tensor, dst_pixel, r, c};
+				*record_it++ = (mp_record_t){src_tensor, dst_pixel, r, c};
 			}
 		}
 	}
 	MPQueue queue  = {record_list, record_it, PTHREAD_MUTEX_INITIALIZER};
-	void *	args[] = {&queue, padded_src.shape, (void *) ksize, (void *) strides};
+	void *	args[] = {&queue, padded_src.shape, (void *) ksize};
 
 	deploy(maxpool_impl, args);
 
@@ -569,7 +568,6 @@ static void *maxpool_impl(void *_args) {
 	MPQueue *q		 = args[0];
 	int *	 shape	 = args[1];
 	int *	 ksize	 = args[2];
-	int *	 strides = args[3];
 
 	while (true) {
 		pthread_mutex_lock(&q->lock);
@@ -582,7 +580,7 @@ static void *maxpool_impl(void *_args) {
 			float * dst_pixel  = addr->dst_pixel;
 			int64_t r		   = addr->r;
 			int64_t c		   = addr->c;
-			maxpool_receptive_field(src_tensor, dst_pixel, r, c, shape, ksize, strides);
+			maxpool_receptive_field(src_tensor, dst_pixel, r, c, shape, ksize);
 		} else {
 			break;
 		}
@@ -597,8 +595,7 @@ static void maxpool_receptive_field(
 	const int		r,
 	const int		c,
 	const int		shape[static 4],
-	const int		ksize[static 2],
-	const int		strides[static 2]) {
+	const int		ksize[static 2]) {
 
 	const int padded_col = shape[2],
 			  n_chan	 = shape[3],
