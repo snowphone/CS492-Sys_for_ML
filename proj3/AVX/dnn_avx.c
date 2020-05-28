@@ -25,7 +25,7 @@ typedef enum {
 #define max(x, y) ((x) > (y) ? (x) : (y))
 
 typedef struct Pool {
-	int	  n_worker;
+	int		  n_worker;
 	pthread_t threads[];
 } Pool;
 
@@ -415,13 +415,13 @@ static Maxpool pad(Maxpool src, padding_t option) {
 			memmove(dst_line, src_line, sizeof(float) * src_line_size);
 
 			for (int c = src_line_size; c < dst_line_size; ++c) {
-				dst_line[c] = -HUGE_VALF;
+				dst_line[c] = -INFINITY;
 			}
 		}
 
 		// Bottom pad
 		for (float *it = dst_line; it < padded.arr + new_size; ++it) {
-			*it = -HUGE_VALF;
+			*it = -INFINITY;
 		}
 
 		return padded;
@@ -563,9 +563,9 @@ float *maxpool(const float src[],
 static void *maxpool_impl(void *_args) {
 	void **args = _args;
 
-	MPQueue *q		 = args[0];
-	int *	 shape	 = args[1];
-	int *	 ksize	 = args[2];
+	MPQueue *q	   = args[0];
+	int *	 shape = args[1];
+	int *	 ksize = args[2];
 
 	while (true) {
 		pthread_mutex_lock(&q->lock);
