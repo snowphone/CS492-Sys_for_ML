@@ -7,10 +7,10 @@ void conv2D(int PW, int PH, int KW, int KH, int IC, int OC, int SW, int SH, int 
 	// openBLAS implementation of 2D convolution
 	// Simillar approach with Toepliz Matrix
 	// matA is [output size X kernel size] matrix. Each row is corresponding input values that multiplied with the kernel to produce one output.
-	// matB is [kernel size X output channel] matrix. Flatten kenel to a column and concatenate all output channels.
+	// matB is [kernel size X output channel] matrix. Flatten each kenels to a column and concatenate all of them. (same as output channels)
 	// By multiplying matA and matB, we can produce output values of each input channel.
-	// Iterating the input channel and accumulate all of the results, the convolution is done.
-	// In the matrix multiplication, we set beta value as 1, so the dgemm does C = A x B + C, so accumulation is naturally done.
+	// Iterating as the number of input channels and accumulate all of the results, the convolution is done.
+	// In the matrix multiplication, we set beta value as 1, so the dgemm does C = A x B + C, so accumulation is naturally done during matrix multiplication.
 
 	int o_size = OW * OH, k_size = KW * KH;
 	int r_idx, c_idx, b_idx, w_idx;

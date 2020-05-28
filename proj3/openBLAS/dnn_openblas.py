@@ -26,7 +26,8 @@ class DnnInferenceEngine(object):
 		currents = [self.g.in_node]
 		done = set()
 		counter = 0
-		os.makedirs("intermediate", exist_ok=True)
+		if self.debug:
+			os.makedirs("intermediate", exist_ok=True)
 		while (len(currents) != 0):
 			nexts = []
 			for current in currents:
