@@ -188,7 +188,7 @@ static void *leaky_relu_impl(void *_arg) {
 
 	const float *const src_end = arr + size;
 
-	__m256 alpha = _mm256_set_ps(0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1);
+	__m256 alpha = _mm256_set1_ps(0.1);
 	float *it;
 	for (it = arr; it + avx2_sz < src_end; it += avx2_sz) {
 		__m256 v_src = _mm256_loadu_ps(it);
