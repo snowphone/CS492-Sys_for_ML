@@ -13,11 +13,11 @@ mylib = cdll.LoadLibrary('./openblas.so')
 ptr = np.ctypeslib.ndpointer(c_double, flags="C_CONTIGUOUS")
 mylib.conv2D.argtypes = [c_int, c_int, c_int, c_int, c_int,
 			 c_int, c_int, c_int, c_int, c_int,
-        		 ptr, ptr, ptr]
+			 ptr, ptr, ptr]
 mylib.biasAdd.argtypes = [c_int, c_int, ptr, ptr, ptr]
 mylib.maxPool2D.argtypes = [c_int, c_int, c_int, c_int, c_int,
 		  	    c_int, c_int, c_int, c_int, 
-        		    ptr, ptr]
+			    ptr, ptr]
 mylib.batchNorm.argtypes = [c_int, c_int, ptr, ptr, ptr, ptr, c_double, ptr]
 mylib.leakyReLU.argtypes = [c_int, c_int, ptr, ptr]
 
@@ -178,7 +178,7 @@ class Conv2D(DnnNode):
 	def run(self, counter):
 		ptin = np.pad(self.in_node.result, self.pad, mode='constant')
 
-                ptin = ptin.astype(np.float64).flatten()
+		ptin = ptin.astype(np.float64).flatten()
 		self.weights = self.weights.astype(np.float64).flatten()
 		self.result = self.result.astype(np.float64).flatten()
 		
@@ -206,7 +206,7 @@ class BiasAdd(DnnNode):
 		tin = self.in_node.result
 		self.result = np.zeros((1, self.OW, self.OH, self.OC))
 
-                tin = tin.astype(np.float64).flatten()
+		tin = tin.astype(np.float64).flatten()
 		tbiases = self.biases.astype(np.float64).flatten()
 		self.result = self.result.astype(np.float64).flatten()
 

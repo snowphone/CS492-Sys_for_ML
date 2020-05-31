@@ -26,15 +26,19 @@ void conv2D(int PW, int PH, int KW, int KH, int IC, int OC, int SW, int SH, int 
 	float al = 1.0f, bet = 1.0f;
 	float *d_a, *d_b, *d_o;
 	
+	cudaMalloc(&d_a, (o_size * k_size) * sizeof(float));
+	cudaMalloc(&d_b, (k_size * OC) * sizeof(float));
+	cudaMalloc(&d_o, (o_size * OC) * sizeof(float));
+
+	matA = (float *)malloc((o_size * k_size) * sizeof(float));
+	matB = (float *)malloc((k_size * OC) * sizeof(float));
 	matC = (float *)malloc((o_size * OC) * sizeof(float));
+
 	for(int i = 0; i < o_size * OC; i++)
 		matC[i] = 0;	
 
-
 	for(int ic = 0; ic < IC; ic++)
 	{
-		matA = (float *)malloc((o_size * k_size) * sizeof(float));
-
 		for(int ow = 0; ow < OW; ow++)
 		{
 			for(int oh  = 0; oh < OH; oh++)
@@ -50,9 +54,7 @@ void conv2D(int PW, int PH, int KW, int KH, int IC, int OC, int SW, int SH, int 
 				}
 			}
 		}
-
-		matB = (float *)malloc((k_size * OC) * sizeof(float));
-		
+	
 		for(int i = 0; i < KW; i++)
 		{
 			for(int j = 0; j < KH; j++)
@@ -65,11 +67,7 @@ void conv2D(int PW, int PH, int KW, int KH, int IC, int OC, int SW, int SH, int 
 				}
 			}
 		}
-
-		cudaMalloc(&d_a, (o_size * k_size) * sizeof(float));
-		cudaMalloc(&d_b, (k_size * OC) * sizeof(float));
-		cudaMalloc(&d_o, (o_size * OC) * sizeof(float));
-
+			
 		cublasSetMatrix(o_size, k_size, sizeof(float), matA, o_size, d_a, o_size);
 		cublasSetMatrix(k_size, OC,  sizeof(float), matB, k_size, d_b, k_size);
 		cublasSetMatrix(o_size, OC, sizeof(float), matC, o_size, d_o, o_size);
@@ -85,20 +83,18 @@ void conv2D(int PW, int PH, int KW, int KH, int IC, int OC, int SW, int SH, int 
 				d_o, o_size);
 		
 		cublasGetMatrix(o_size, OC, sizeof(float), d_o, o_size, matC, o_size);
-		
-		cudaFree(d_a);
-		cudaFree(d_b);
-		cudaFree(d_o);
-		cublasDestroy(handle);
-		free(matA);
-		free(matB);
-	
-	}
+		}
 	
 	for(int i = 0; i < o_size; i++)
 		for(int j = 0; j < OC; j++)
 			O[i * OC + j] = matC[j * o_size + i];
-
+		
+	cudaFree(d_a);
+	cudaFree(d_b);
+	cudaFree(d_o);
+	cublasDestroy(handle);
+	free(matA);
+	free(matB);
 	free(matC);
 }
 
@@ -115,9 +111,9 @@ void biasAdd(int size, int OC, double *I, double *B, double *O)
 
 extern "C"
 
-void maxPool2D(int PW, int PH, int KW, int KH, int OC, int SW, int SH, int OW, int OH, float *I, float *O)
+void maxPool2D(int PW, int PH, int KW, int KH, int OC, int SW, int SH, int OW, int OH, double *I, double *O)
 {
-        float max;
+        double max;
         int o_idx, s_idx, k_idx;
 
         for(int oc = 0; oc < OC; oc++)
@@ -167,19 +163,9 @@ void batchNorm(int size, int OC, double *I, double *mean, double *gamma, double 
 	}
 }
 
-void batchNorm(int size, int OC, float *I, float *mean, float *gamma, float *variance, float epsilon, float *O)
-{
-
-	for(int i = 0; i < size; i++)
-		for(int oc = 0; oc < OC; oc++)
-		{
-			O[i * OC + oc] = (I[i * OC + oc] - mean[oc]) * gamma[oc] / sqrt(variance[oc] + epsilon);	
-		}
-}
-
 extern "C"
 
-void leakyReLU(int size, int OC, float *I, float *O)
+void leakyReLU(int size, int OC, double *I, double *O)
 {
         int idx;
 

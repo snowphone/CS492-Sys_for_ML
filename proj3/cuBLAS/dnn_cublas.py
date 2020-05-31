@@ -10,16 +10,17 @@ import time
 
 parallelism = 8
 mylib = cdll.LoadLibrary('./cublas.so')
-ptr = np.ctypeslib.ndpointer(c_float, flags="C_CONTIGUOUS")
+ptr32 = np.ctypeslib.ndpointer(c_float, flags="C_CONTIGUOUS")
+ptr64 = np.ctypeslib.ndpointer(c_double, flags="C_CONTIGUOUS")
 mylib.conv2D.argtypes = [c_int, c_int, c_int, c_int, c_int,
 			 c_int, c_int, c_int, c_int, c_int,
-			 ptr, ptr, ptr]
-mylib.biasAdd.argtypes = [c_int, c_int, ptr, ptr, ptr]
+			 ptr32, ptr32, ptr32]
+mylib.biasAdd.argtypes = [c_int, c_int, ptr64, ptr64, ptr64]
 mylib.maxPool2D.argtypes = [c_int, c_int, c_int, c_int, c_int,
 			    c_int, c_int, c_int, c_int,
-			    ptr, ptr]
-mylib.batchNorm.argtypes = [c_int, c_int, ptr, ptr, ptr, ptr, c_double, ptr]
-mylib.leakyReLU.argtypes = [c_int, c_int, ptr, ptr]
+			    ptr64, ptr64]
+mylib.batchNorm.argtypes = [c_int, c_int, ptr64, ptr64, ptr64, ptr64, c_double, ptr64]
+mylib.leakyReLU.argtypes = [c_int, c_int, ptr64, ptr64]
 
 class DnnInferenceEngine(object):
 	def __init__(self, graph, debug):
@@ -183,7 +184,7 @@ class Conv2D(DnnNode):
 		self.result = self.result.astype(np.float32).flatten()
 
 		mylib.conv2D(self.PW, self.PH, self.KW, self.KH, self.IC, self.OC, self.SW, self.SH, self.OW, self.OH, ptin, self.weights, self.result)
-		self.result = self.result.reshape((1, self.OW, self.OH, self.OC))
+		self.result = self.result.reshape((1, self.OW, self.OH, self.OC)).astype(np.float64)
 		# Assumed batch = 1		
 
 class BiasAdd(DnnNode):
@@ -206,9 +207,9 @@ class BiasAdd(DnnNode):
 		tin = self.in_node.result
 		self.result = np.zeros((1, self.OW, self.OH, self.OC))
 
-		tin = tin.astype(np.float32).flatten()
-		tbiases = self.biases.astype(np.float32).flatten()
-		self.result = self.result.astype(np.float32).flatten()
+		tin = tin.astype(np.float64).flatten()
+		tbiases = self.biases.astype(np.float64).flatten()
+		self.result = self.result.astype(np.float64).flatten()
 
 		mylib.biasAdd(self.OW * self.OH, self.OC, tin, tbiases, self.result)
 		self.result = self.result.reshape((1, self.OW, self.OH, self.OC))
@@ -266,8 +267,8 @@ class MaxPool2D(DnnNode):
 	def run(self, counter):
 		ptin = np.pad(self.in_node.result, self.pad, mode='constant')
 
-		ptin = ptin.astype(np.float32).flatten()
-		self.result = self.result.astype(np.float32).flatten()
+		ptin = ptin.astype(np.float64).flatten()
+		self.result = self.result.astype(np.float64).flatten()
 		mpOW = int(self.PW/self.stride[1])
 		mpOH = int(self.PH/self.stride[2])
 
@@ -299,11 +300,11 @@ class BatchNorm(DnnNode):
 		tin = self.in_node.result
 		self.result = np.zeros((1, self.OW, self.OH, self.OC))
 
-		tin = tin.astype(np.float32).flatten()
-		tmean = self.mean.astype(np.float32).flatten()
-		tgamma = self.gamma.astype(np.float32).flatten()
-		tvar = self.variance.astype(np.float32).flatten()
-		self.result = self.result.astype(np.float32).flatten()
+		tin = tin.astype(np.float64).flatten()
+		tmean = self.mean.astype(np.float64).flatten()
+		tgamma = self.gamma.astype(np.float64).flatten()
+		tvar = self.variance.astype(np.float64).flatten()
+		self.result = self.result.astype(np.float64).flatten()
 
 		mylib.batchNorm(self.OW * self.OH, self.OC, tin, tmean, tgamma, tvar, np.float32(self.epsilon), self.result)
 		self.result = self.result.reshape((1, self.OW, self.OH, self.OC))
@@ -325,8 +326,8 @@ class LeakyReLU(DnnNode):
 		tin = self.in_node.result
 		self.result = np.zeros((1, self.OW, self.OH, self.OC))
 
-		tin = tin.astype(np.float32).flatten()
-		self.result = self.result.astype(np.float32).flatten()
+		tin = tin.astype(np.float64).flatten()
+		self.result = self.result.astype(np.float64).flatten()
 
 		mylib.leakyReLU(self.OW * self.OH, self.OC, tin, self.result)
 		self.result = self.result.reshape((1, self.OW, self.OH, self.OC))

@@ -69,10 +69,10 @@ void conv2D(int PW, int PH, int KW, int KH, int IC, int OC, int SW, int SH, int 
 void biasAdd(int size, int OC, double *I, double *B, double *O)
 {
 	for(int i = 0; i < size; i++)
-	{
-		cblas_daxpy(OC, 1, B, 1, O + i * OC, 1);
-		cblas_daxpy(OC, 1, I + i * OC, 1, O + i * OC, 1);
-	}
+		for(int oc = 0; oc < OC; oc++)
+		{
+			O[i * OC + oc] = I[i * OC + oc] + B[oc];
+		}
 }
 
 void maxPool2D(int PW, int PH, int KW, int KH, int OC, int SW, int SH, int OW, int OH, double *I, double *O)
@@ -110,19 +110,11 @@ void maxPool2D(int PW, int PH, int KW, int KH, int OC, int SW, int SH, int OW, i
 
 void batchNorm(int size, int OC, double *I, double *mean, double *gamma, double *variance, double epsilon, double *O)
 {	
-	double coeff;
-
 	for(int i = 0; i < size; i++)
-	{
-		cblas_daxpy(OC, -1, mean, 1, O + i * OC, 1);
-		cblas_daxpy(OC, 1, I + i * OC, 1, O + i * OC, 1);
-	}
-	
-	for(int oc = 0; oc < OC; oc++)
-	{
-		coeff = gamma[oc] / sqrt(variance[oc] + epsilon);
-		cblas_dscal(size, coeff, O + oc, OC);
-	}
+		for(int oc = 0; oc < OC; oc++)
+		{	
+			O[i * OC + oc] = (I[i * OC + oc] - mean[oc]) * gamma[oc] / sqrt(variance[oc] = epsilon);	
+		}
 }
 
 void leakyReLU(int size, int OC, double *I, double *O)
