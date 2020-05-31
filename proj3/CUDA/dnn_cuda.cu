@@ -1,18 +1,20 @@
-#include <assert.h>
+#include <cassert>
 #include <err.h>
-#include <errno.h>
-#include <math.h>
-#include <stdbool.h>
-#include <stddef.h>
-#include <stdint.h>
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
+#include <cerrno>
+#include <cmath>
+#include <cstdint>
+#include <cstdio>
+#include <cstdlib>
+#include <cstring>
 
 #include <immintrin.h>
 #include <pthread.h>
 #include <sys/mman.h>
 #include <unistd.h>
+
+#include <cuda_runtime.h>
+
+extern "C" {
 
 enum { avx2_sz = 8 };
 typedef enum {
@@ -25,7 +27,7 @@ typedef enum {
 #define max(x, y) ((x) > (y) ? (x) : (y))
 
 typedef struct Pool {
-	int		  n_worker;
+	int	  n_worker;
 	pthread_t threads[];
 } Pool;
 
@@ -61,29 +63,19 @@ typedef struct MPQueue {
 	pthread_mutex_t lock;
 } MPQueue;
 
-typedef struct cv_record_t {
-	float *receptive_field;
-	float *dst;
-} cv_record_t;
-
-typedef struct CVQueue {
-	cv_record_t *	iter;
-	cv_record_t *	end;
-	pthread_mutex_t lock;
-} CVQueue;
 
 static void *leaky_relu_impl(void *_arg);
 
 static void *batch_norm_impl(void *_args);
 static void	 batch_normalization_pixel(float *const pixel,
-									   const int	shape[static 4],
+									   const int	shape[],
 									   float *const mean,
 									   float *const var,
 									   float *const gamma,
 									   const float	epsilon);
 
 static void *bias_add_impl(void *_args);
-static void	 bias_add_pixel(float *const arr, int shape[static 4], float *const biases);
+static void	 bias_add_pixel(float *const arr, int shape[], float *const biases);
 
 static void *maxpool_impl(void *_args);
 static void	 maxpool_receptive_field(
@@ -91,13 +83,12 @@ static void	 maxpool_receptive_field(
 	 float *   dst,
 	 int	   r,
 	 int	   c,
-	 const int shape[static 4],
-	 const int ksize[static 2]);
+	 const int shape[],
+	 const int ksize[]);
 
-static void *matmul_impl(void *_args);
-static void	 matmul(const float *restrict receptive_field,
-					const float *restrict weight,
-					float *restrict		  dst,
+static void	 matmul(const float * receptive_field,
+					const float * weight,
+					float *		  dst,
 
 					const int n_strides,
 					const int kernel_len,
@@ -111,7 +102,7 @@ static int get_num_cpus() {
 
 static Pool *init_pool() {
 	const int numCPUs = get_num_cpus();
-	Pool *	  pool	  = malloc(sizeof pool + numCPUs * sizeof(pthread_t));
+	Pool *	  pool	  = (Pool*)malloc(sizeof pool + numCPUs * sizeof(pthread_t));
 	pool->n_worker	  = numCPUs;
 
 	return pool;
@@ -182,13 +173,13 @@ void leaky_relu(float *const arr, const int size) {
 }
 
 static void *leaky_relu_impl(void *_arg) {
-	Array *		 arg  = _arg;
+	Array *		 arg  = (Array*)_arg;
 	float *const arr  = arg->arr;
 	const int	 size = arg->size;
 
 	const float *const src_end = arr + size;
 
-	__m256 alpha = _mm256_set1_ps(0.1);
+	__m256 alpha = _mm256_set_ps(0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1);
 	float *it;
 	for (it = arr; it + avx2_sz < src_end; it += avx2_sz) {
 		__m256 v_src = _mm256_loadu_ps(it);
@@ -207,22 +198,22 @@ static void *leaky_relu_impl(void *_arg) {
 	return NULL;
 }
 
-void batch_normalization(float *const arr, const int shape[static 4], float *const mean, float *const var, float *const gamma, const float epsilon) {
+void batch_normalization(float *const arr, const int shape[], float *const mean, float *const var, float *const gamma, const float epsilon) {
 
 	float *			  end	 = arr + shape[0] * shape[1] * shape[2] * shape[3];
 	Queue			  queue	 = {arr, end, PTHREAD_MUTEX_INITIALIZER};
-	const void *const args[] = {&queue, shape, mean, var, gamma, &epsilon};
+	const void *const args[] = {(void*)&queue, (void*)shape, (void*)mean, (void*)var, (void*)gamma, (void*)&epsilon};
 
-	deploy(batch_norm_impl, (void *) args);
+	deploy(batch_norm_impl, (void **) args);
 }
 
 static void *batch_norm_impl(void *_args) {
-	void **args	   = _args;
-	Queue *q	   = args[0];
-	int *  shape   = args[1];
-	float *mean	   = args[2];
-	float *var	   = args[3];
-	float *gamma   = args[4];
+	void **args	   = (void**)_args;
+	Queue *q	   = (Queue*)args[0];
+	int *  shape   = (int*)args[1];
+	float *mean	   = (float*)args[2];
+	float *var	   = (float*)args[3];
+	float *gamma   = (float*)args[4];
 	float  epsilon = *(float *) args[5];
 
 	while (1) {
@@ -241,7 +232,7 @@ static void *batch_norm_impl(void *_args) {
 }
 
 static void batch_normalization_pixel(float *const pixel,
-									  const int	   shape[static 4],
+									  const int	   shape[],
 									  float *const mean,
 									  float *const var,
 									  float *const gamma,
@@ -260,9 +251,10 @@ static void batch_normalization_pixel(float *const pixel,
 		__m256 m = _mm256_loadu_ps(mean + ch);
 		__m256 v = _mm256_loadu_ps(var + ch);
 		__m256 g = _mm256_loadu_ps(gamma + ch);
+		__m256 tmp;
 
 		x		   = _mm256_sub_ps(x, m);
-		__m256 tmp = _mm256_sqrt_ps(_mm256_add_ps(v, e));
+		tmp = _mm256_sqrt_ps(_mm256_add_ps(v, e));
 		x		   = _mm256_div_ps(_mm256_mul_ps(g, x), tmp);
 
 		_mm256_storeu_ps(it + ch, x);
@@ -277,19 +269,19 @@ static void batch_normalization_pixel(float *const pixel,
 	return;
 }
 
-void bias_add(float *const arr, int shape[static 4], float *const biases) {
+void bias_add(float *const arr, int shape[], float *const biases) {
 	const int size	 = shape[0] * shape[1] * shape[2] * shape[3];
 	Queue	  queue	 = {arr, arr + size, PTHREAD_MUTEX_INITIALIZER};
-	void *	  args[] = {&queue, shape, biases};
+	void *	  args[] = {(void*)&queue, (void*)shape, (void*)biases};
 
-	deploy(bias_add_impl, (void *) args);
+	deploy(bias_add_impl, (void **) args);
 }
 
 static void *bias_add_impl(void *_args) {
-	void **args	  = _args;
-	Queue *q	  = args[0];
-	int *  shape  = args[1];
-	float *biases = args[2];
+	void **args	  = (void**)_args;
+	Queue *q	  = (Queue*)args[0];
+	int *  shape  = (int*) args[1];
+	float *biases = (float*)args[2];
 
 	static bool is_set_len = false;
 	static int	addr_len;
@@ -326,7 +318,7 @@ exit:
 	return NULL;
 }
 
-static void bias_add_pixel(float *const arr, int shape[static 4], float *const biases) {
+static void bias_add_pixel(float *const arr, int shape[], float *const biases) {
 	const int n_chan = shape[3];
 
 	int ch = 0;
@@ -349,14 +341,15 @@ static Maxpool create_maxpool_arr(Maxpool conv) {
 			  size	  = n_batch * out_r * out_c * n_chan;
 
 	Maxpool ret = {
-		.arr	 = Mmap(sizeof(float) * size),
-		.shape	 = malloc(sizeof(int) * 4),
+		.arr	 = (float*) Mmap(sizeof(float) * size),
+		.shape	 = (int*)malloc(sizeof(int) * 4),
 		.ksize	 = conv.ksize,
 		.strides = conv.strides,
 		.padding = conv.padding,
 	};
 
-	memmove(ret.shape, (int[]){n_batch, out_r, out_c, n_chan}, sizeof(int) * 4);
+	int new_shape[] = {n_batch, out_r, out_c, n_chan};
+	memmove(ret.shape, new_shape, sizeof(int) * 4);
 
 	return ret;
 }
@@ -394,14 +387,15 @@ static Maxpool pad(Maxpool src, padding_t option) {
 				  new_size = n_batch * new_r * new_c * n_chan;
 
 		Maxpool padded = {
-			.arr	 = Mmap(sizeof(float) * new_size),
-			.shape	 = malloc(sizeof(int) * 4),
+			.arr	 = (float*)Mmap(sizeof(float) * new_size),
+			.shape	 = (int*)malloc(sizeof(int) * 4),
 			.ksize	 = src.ksize,
 			.strides = src.strides,
 			.padding = src.padding,
 		};
 
-		memmove(padded.shape, (int[]){n_batch, new_r, new_c, n_chan}, sizeof(int) * 4);
+		int new_shape[] = {n_batch, new_r, new_c, n_chan};
+		memmove(padded.shape, new_shape, sizeof(int) * 4);
 
 		// Right pad
 		const int n_row			= src.shape[1],
@@ -435,8 +429,8 @@ static Maxpool pad(Maxpool src, padding_t option) {
 					  size	  = n_batch * n_row * n_col * n_chan;
 
 			Maxpool dst = {
-				.arr	 = Mmap(sizeof(float) * size),
-				.shape	 = malloc(sizeof(int) * 4),
+				.arr	 = (float*)Mmap(sizeof(float) * size),
+				.shape	 = (int*)malloc(sizeof(int) * 4),
 				.ksize	 = src.ksize,
 				.strides = src.strides,
 				.padding = src.padding,
@@ -459,14 +453,15 @@ static Maxpool pad(Maxpool src, padding_t option) {
 					  padded_size = n_batch * padded_row * padded_col * n_chan;
 
 			Maxpool dst = {
-				.arr	 = Mmap(sizeof(float) * padded_size),
-				.shape	 = malloc(sizeof(int) * 4),
+				.arr	 = (float*)Mmap(sizeof(float) * padded_size),
+				.shape	 = (int*)malloc(sizeof(int) * 4),
 				.ksize	 = src.ksize,
 				.strides = src.strides,
 				.padding = src.padding,
 			};
 
-			memmove(dst.shape, (int[]){n_batch, padded_row, padded_col, n_chan}, sizeof(int) * 4);
+			int new_shape[] = {n_batch, padded_row, padded_col, n_chan};
+			memmove(dst.shape, new_shape, sizeof(int) * 4);
 
 			const int vertical_pad_len	 = c_pad * padded_col * n_chan,
 					  horizontal_pad_len = r_pad * n_chan,
@@ -509,9 +504,9 @@ static Maxpool pad(Maxpool src, padding_t option) {
 }
 
 float *maxpool(const float src[],
-			   const int   shape[static 4],
-			   const int   ksize[static 2],
-			   const int   strides[static 2],
+			   const int   shape[],
+			   const int   ksize[],
+			   const int   strides[],
 			   padding_t   padding) {
 	Maxpool src_conv   = {(float *) src, (int *) shape, ksize, strides, padding};
 	Maxpool padded_src = pad(src_conv, POOLING); // Only right and bottom are padded.
@@ -530,7 +525,7 @@ float *maxpool(const float src[],
 
 	int record_list_len = dst.shape[0] * dst.shape[1] * dst.shape[2] * dst.shape[3];
 
-	mp_record_t *record_list = Mmap(sizeof *record_list * record_list_len),
+	mp_record_t *record_list = (mp_record_t*)Mmap(sizeof *record_list * record_list_len),
 				*record_it	 = record_list;
 
 	float *dst_pixel = dst.arr;
@@ -561,11 +556,11 @@ float *maxpool(const float src[],
 }
 
 static void *maxpool_impl(void *_args) {
-	void **args = _args;
+	void **args = (void**)_args;
 
-	MPQueue *q	   = args[0];
-	int *	 shape = args[1];
-	int *	 ksize = args[2];
+	MPQueue *q		 = (MPQueue*)args[0];
+	int *	 shape	 = (int*)args[1];
+	int *	 ksize	 = (int*)args[2];
 
 	while (true) {
 		pthread_mutex_lock(&q->lock);
@@ -588,12 +583,12 @@ static void *maxpool_impl(void *_args) {
 }
 
 static void maxpool_receptive_field(
-	float *restrict src_tensor,
-	float *restrict dst_pixel,
+	float * src_tensor,
+	float * dst_pixel,
 	const int		r,
 	const int		c,
-	const int		shape[static 4],
-	const int		ksize[static 2]) {
+	const int		shape[],
+	const int		ksize[]) {
 
 	const int padded_col = shape[2],
 			  n_chan	 = shape[3],
@@ -631,15 +626,15 @@ static void maxpool_receptive_field(
 }
 
 float *conv2d(
-	float *restrict src,
-	const int		shape[static 4],
-	float *restrict weight,
-	const int		k_shape[static 4],
-	const int		strides[static 2],
+	float * src,
+	const int		shape[],
+	float * weight,
+	const int		k_shape[],
+	const int		strides[],
 	padding_t		padding) {
 
 	const int ksize[2]	 = {k_shape[0], k_shape[1]};
-	Maxpool	  _src		 = {src, (void *) shape, ksize, strides, padding};
+	Maxpool	  _src		 = {src, (int*)shape, ksize, strides, padding};
 	Maxpool	  padded_src = pad(_src, CONVOLVING);
 
 	const int n_batch = shape[0],
@@ -658,15 +653,14 @@ float *conv2d(
 			  src_tensor_size = padded_row * padded_col * n_chan,
 			  src_line_size	  = padded_col * n_chan;
 
-	float *dst = Mmap(sizeof(float) * dst_size);
+	float *dst = (float*)Mmap(sizeof(float) * dst_size);
 
 	float *	  dst_iter	 = dst;
 	float *	  src_tensor = padded_src.arr;
 	const int kernel_len = k_shape[0] * k_shape[1] * n_chan,
 			  n_strides	 = dst_row * dst_col;
 
-	float *		 receptive_fields = Mmap(sizeof(float) * kernel_len * n_strides);
-	cv_record_t *records		  = Mmap(sizeof *records * n_strides);
+	float *		 receptive_fields = (float*)Mmap(sizeof(float) * kernel_len * n_strides);
 
 	for (int b = 0; b < n_batch; ++b, src_tensor += b * src_tensor_size) {
 		float *field_it = receptive_fields;
@@ -687,82 +681,86 @@ float *conv2d(
 				}
 
 				// Calculate conv operation
-				// weight: (dst_chan, ffc)
-				// receptive field: (ffc, n_strides)
 			}
 		}
-		for (int i = 0; i < n_strides; ++i) {
-			records[i] = (cv_record_t){
-				&receptive_fields[i * kernel_len],
-				&dst_iter[i * dst_chan],
-			};
-		}
-		CVQueue queue  = {records, records + n_strides, PTHREAD_MUTEX_INITIALIZER};
-		void *	args[] = {&queue, weight, (void *) &kernel_len, (void *) &dst_chan};
-		deploy(matmul_impl, args);
-
+		
+		matmul(receptive_fields, weight, dst_iter, n_strides, kernel_len, dst_chan);
 		dst_iter += dst_chan * n_strides;
 	}
 
-	munmap(records, sizeof *records * n_strides);
 	munmap(receptive_fields, sizeof(float) * n_strides * kernel_len);
 	munmap(padded_src.arr, sizeof(float) * n_batch * padded_row * padded_col * n_chan);
 	free(padded_src.shape);
 	return dst;
 }
 
-static void *matmul_impl(void *_args) {
-	void **	  args		 = _args;
-	CVQueue * q			 = args[0];
-	float *	  weight	 = args[1];
-	const int kernel_len = *(int *) args[2],
-			  dst_chan	 = *(int *) args[3];
 
-	while (true) {
+#define HANDLE_ERROR( err ) (HandleError( err, __FILE__, __LINE__ ))
 
-		pthread_mutex_lock(&q->lock);
-		cv_record_t *it = q->iter++;
-		pthread_mutex_unlock(&q->lock);
-
-		if (it < q->end)
-			matmul(it->receptive_field, weight, it->dst, 1, kernel_len, dst_chan);
-		else
-			break;
-	}
-
-	return NULL;
+static void HandleError(cudaError_t err, const char *file, int line) {
+    if (err != cudaSuccess) {
+        errx(EXIT_FAILURE, "%s in %s at line %d\n", cudaGetErrorString( err ), file, line);
+    }
 }
 
-static void matmul(const float *restrict receptive_field,
-				   const float *restrict weight,
-				   float *restrict		 dst,
+
+__global__ static void matmul_impl(const float * d_rf,
+				   const float * d_w,
+				   float *		 d_dst,
 
 				   const int n_strides,
 				   const int kernel_len,
 				   const int dst_chan) {
-	memset(dst, 0, sizeof(float) * n_strides * dst_chan);
 
-	for (int j = 0; j < kernel_len; ++j) {
-		float *rhs_line = (float *) &weight[j * dst_chan];
+	int row = blockIdx.y * blockDim.y +  threadIdx.y,
+		col = blockIdx.x * blockDim.x +  threadIdx.x;
 
-		for (int i = 0; i < n_strides; ++i) {
-			float  x		= receptive_field[i * kernel_len + j];
-			__m256 xv		= _mm256_set1_ps(x);
-			float *dst_line = &dst[i * dst_chan];
 
-			int k;
-			for (k = 0; k + avx2_sz < dst_chan; k += avx2_sz) {
-
-				__m256 kv	= _mm256_loadu_ps(dst_line + k);
-				__m256 rhsv = _mm256_loadu_ps(rhs_line + k);
-				kv			= _mm256_add_ps(kv, _mm256_mul_ps(xv, rhsv));
-
-				_mm256_storeu_ps(dst_line + k, kv);
-			}
-
-			for (; k < dst_chan; ++k) {
-				dst_line[k] += x * rhs_line[k];
-			}
+	if(row < n_strides && col < dst_chan) {
+		float acc = 0.f;
+		for (int k = 0; k < kernel_len; ++k) {
+			acc += d_rf[row * kernel_len + k] * d_w[k * dst_chan + col];
 		}
+		d_dst[row * dst_chan + col] = acc;
 	}
 }
+
+static void matmul(const float * receptive_field,
+				   const float * weight,
+				   float *		 dst,
+
+				   const int n_strides,
+				   const int kernel_len,
+				   const int dst_chan) {
+	const int rf_size  = n_strides * kernel_len,
+			  w_size   = kernel_len * dst_chan,
+			  dst_size = n_strides * dst_chan;
+	float *d_rf, 
+		  *d_w, 
+		  *d_dst;
+
+	HANDLE_ERROR(cudaMalloc((void**)&d_rf, sizeof(float) * rf_size));
+	HANDLE_ERROR(cudaMalloc((void**)&d_w, sizeof(float) * w_size));
+	HANDLE_ERROR(cudaMalloc((void**)&d_dst, sizeof(float) * dst_size));
+
+
+	HANDLE_ERROR(cudaMemcpy(d_rf, receptive_field, sizeof(float) * rf_size, cudaMemcpyHostToDevice));
+	HANDLE_ERROR(cudaMemcpy(d_w, weight, sizeof(float) * w_size, cudaMemcpyHostToDevice));
+	
+
+	int blockSize = 16;
+	dim3 dimBlock(blockSize, blockSize);
+	// COL, ROW
+	dim3 dimGrid(ceil((float)dst_chan / dimBlock.x), ceil((float)n_strides / dimBlock.y));
+
+	matmul_impl<<<dimGrid, dimBlock>>>(d_rf, d_w, d_dst, n_strides, kernel_len, dst_chan);
+
+	HANDLE_ERROR(cudaMemcpy(dst, d_dst, sizeof(float) * dst_size, cudaMemcpyDeviceToHost));
+
+	cudaFree(d_rf);
+	cudaFree(d_w);
+	cudaFree(d_dst);
+	return;
+}
+}
+
