@@ -3,6 +3,8 @@
 #include <cuda_runtime.h>
 #include <cublas_v2.h>
 #include <stddef.h>
+#include <cblas.h>
+#include <math.h>
 
 extern "C"
 
@@ -102,13 +104,13 @@ void conv2D(int PW, int PH, int KW, int KH, int IC, int OC, int SW, int SH, int 
 
 extern "C"
 
-void biasAdd(int size, int OC, float *I, float *B, float *O)
+void biasAdd(int size, int OC, double *I, double *B, double *O)
 {
 	for(int i = 0; i < size; i++)
-		for(int oc = 0; oc < OC; oc++)
-		{
-			O[i * OC + oc] = I[i * OC + oc] + B[oc];
-		}
+	{
+		cblas_daxpy(OC, 1, B, 1, O + i * OC, 1);
+		cblas_daxpy(OC, 1, I + i * OC, 1, O + i * OC, 1);
+	}
 }
 
 extern "C"
@@ -147,6 +149,23 @@ void maxPool2D(int PW, int PH, int KW, int KH, int OC, int SW, int SH, int OW, i
 }
 
 extern "C"
+
+void batchNorm(int size, int OC, double *I, double *mean, double *gamma, double *variance, double epsilon, double *O)
+{
+	double coeff;
+
+	for(int i = 0; i < size; i++)
+	{
+		cblas_daxpy(OC, -1, mean, 1, O + i * OC, 1);
+		cblas_daxpy(OC, 1, I + i * OC, 1, O + i * OC, 1);
+	}
+	
+	for(int oc = 0; oc < OC; oc++)
+	{
+		coeff = gamma[oc] / sqrt(variance[oc] + epsilon);
+	        cblas_dscal(size, coeff, O + oc, OC);
+	}
+}
 
 void batchNorm(int size, int OC, float *I, float *mean, float *gamma, float *variance, float epsilon, float *O)
 {
