@@ -45,12 +45,7 @@ class DnnInferenceEngine(object):
 						skip_current = True
 				if skip_current:
 					continue
-				t_run = time.time()
 				current.run(counter)
-				t_run = time.time() - t_run
-				print("Layer: {} - {} sec".format(current.name, t_run))
-				print(current.result[0,0,0,0])
-				print(current.result[0,1,5,2])
 				if not isinstance(current, Input):
 					if self.debug:
 						path = os.path.join("intermediate", "layer_{}.npy".format(counter))
@@ -216,9 +211,7 @@ class BiasAdd(DnnNode):
 		self.result = self.result.astype(np.float32).flatten()
 
 		mylib.biasAdd(self.OW * self.OH, self.OC, tin, tbiases, self.result)
-		print("after call")
 		self.result = self.result.reshape((1, self.OW, self.OH, self.OC))
-		print("end of biasadd")
 	
 class MaxPool2D(DnnNode):
 	def __init__(self, name, in_node, ksize, strides, padding):

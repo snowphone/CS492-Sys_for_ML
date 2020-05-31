@@ -45,12 +45,7 @@ class DnnInferenceEngine(object):
 						skip_current = True
 				if skip_current:
 					continue
-				t_run = time.time()
 				current.run(counter)
-				t_run = time.time() - t_run
-				print("Layer: {} - {} sec".format(current.name, t_run))
-				print(current.result[0,0,0,0])
-				print(current.result[0,1,5,2])
 				if not isinstance(current, Input):
 					if self.debug:
 						path = os.path.join("intermediate", "layer_{}.npy".format(counter))
@@ -182,7 +177,8 @@ class Conv2D(DnnNode):
 
 	def run(self, counter):
 		ptin = np.pad(self.in_node.result, self.pad, mode='constant')
-		ptin = ptin.astype(np.float64).flatten()
+
+                ptin = ptin.astype(np.float64).flatten()
 		self.weights = self.weights.astype(np.float64).flatten()
 		self.result = self.result.astype(np.float64).flatten()
 		
@@ -209,7 +205,8 @@ class BiasAdd(DnnNode):
 	def run(self, counter):
 		tin = self.in_node.result
 		self.result = np.zeros((1, self.OW, self.OH, self.OC))
-		tin = tin.astype(np.float64).flatten()
+
+                tin = tin.astype(np.float64).flatten()
 		tbiases = self.biases.astype(np.float64).flatten()
 		self.result = self.result.astype(np.float64).flatten()
 
