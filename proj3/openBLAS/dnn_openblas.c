@@ -1,6 +1,8 @@
 #include <stdio.h>
 #include <cblas.h>
 #include <stdlib.h>
+#include <math.h>
+#include <stddef.h>
 
 void conv2D(int PW, int PH, int KW, int KH, int IC, int OC, int SW, int SH, int OW, int OH, double *I, double *W, double *O)
 {
@@ -62,4 +64,77 @@ void conv2D(int PW, int PH, int KW, int KH, int IC, int OC, int SW, int SH, int 
 		free(matA);
 		free(matB);
 	}
+}
+
+void biasAdd(int size, int OC, double *I, double *B, double *O)
+{
+	for(int i = 0; i < size; i++)
+	{
+		cblas_daxpy(OC, 1, B, 1, O + i * OC, 1);
+		cblas_daxpy(OC, 1, I + i * OC, 1, O + i * OC, 1);
+	}
+}
+
+void maxPool2D(int PW, int PH, int KW, int KH, int OC, int SW, int SH, int OW, int OH, double *I, double *O)
+{
+	double max;
+	int o_idx, s_idx, k_idx;
+
+	for(int oc = 0; oc < OC; oc++)
+	{
+		for(int ow = 0; ow < OW; ow++)
+		{
+			for(int oh  = 0; oh < OH; oh++)
+			{
+				o_idx = (ow * OH + oh) * OC + oc;
+				s_idx = (ow * SW * PH + oh * SH) * OC + oc;
+				max = I[s_idx];
+				for(int i = 0; i < KW; i++)
+				{	
+					if(ow * SW + i >= PW)
+						break; 	
+					for(int j = 0; j < KH; j++)
+					{
+						if(oh * SH + j >= PH)
+							break;
+						k_idx = (i * PH + j) * OC;
+						if(I[s_idx + k_idx] > max)
+							max = I[s_idx + k_idx];
+					}
+				}
+				O[o_idx] = max;
+			}
+		}
+	}
+}
+
+void batchNorm(int size, int OC, double *I, double *mean, double *gamma, double *variance, double epsilon, double *O)
+{	
+	double coeff;
+
+	for(int i = 0; i < size; i++)
+	{
+		cblas_daxpy(OC, -1, mean, 1, O + i * OC, 1);
+		cblas_daxpy(OC, 1, I + i * OC, 1, O + i * OC, 1);
+	}
+	
+	for(int oc = 0; oc < OC; oc++)
+	{
+		coeff = gamma[oc] / sqrt(variance[oc] + epsilon);
+		cblas_dscal(size, coeff, O + oc, OC);
+	}
+}
+
+void leakyReLU(int size, int OC, double *I, double *O)
+{
+	int idx;
+
+	for(int i = 0; i < size; i++)
+		for(int oc = 0; oc < OC; oc++)
+		{
+			idx = i * OC + oc;			
+			if(I[idx] < 0)
+				I[idx] = I[idx] * 0.1;
+			O[idx] = I[idx];
+		}
 }
