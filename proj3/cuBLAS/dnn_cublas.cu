@@ -12,15 +12,15 @@ void conv2D(int PW, int PH, int KW, int KH, int IC, int OC, int SW, int SH, int 
 {
 	// cuBLAS implementation of 2D convolution
 	// cuBLAS's Sgemm is executed based on that the matrix are ordered in Column Major.
-	// Store matA and matB in column major order and caculate matrix multiplication and store the result to matC.
-	// After done convolution, store matC to Output matrix in row major order.
+	// Store tiled_in in column major order and caculate matrix multiplication and store the result to O_colMaj.
+	// After done convolution, store O_colMaj to Output matrix in row major order.
 
 	// Since unexpected calculation error occurs when use transpose approach to handle RowMajor <-> ColumnMajor,
 	// Just reuse openBLAS code that properly working but different major.
 	
 	int o_size = OW * OH, k_size = KW * KH;
 	int r_idx, c_idx;
-	float *matA, *matC;
+	float *tiled_in, *O_colMaj;
 
 	cublasHandle_t handle;
 	float al = 1.0f, bet = 1.0f;
@@ -30,11 +30,11 @@ void conv2D(int PW, int PH, int KW, int KH, int IC, int OC, int SW, int SH, int 
 	cudaMalloc(&d_b, (OC * IC * k_size) * sizeof(float));
 	cudaMalloc(&d_o, (o_size * OC) * sizeof(float));
 
-	matA = (float *)malloc((o_size * k_size * IC) * sizeof(float));
-	matC = (float *)malloc((o_size * OC * IC) * sizeof(float));
+	tiled_in = (float *)malloc((o_size * k_size * IC) * sizeof(float));
+	O_colMaj = (float *)malloc((o_size * OC * IC) * sizeof(float));
 
 	for(int i = 0; i < o_size * OC; i++)
-		matC[i] = 0;	
+		O_colMaj[i] = 0;	
 	
 	for(int ow = 0; ow < OW; ow++)
 		for(int oh  = 0; oh < OH; oh++)
@@ -45,13 +45,13 @@ void conv2D(int PW, int PH, int KW, int KH, int IC, int OC, int SW, int SH, int 
 					for(int j = 0; j < KH; j++)
 					{	
 						c_idx = i * KH + j;
-						matA[(c_idx * IC + ic) * o_size + r_idx] = I[((ow * SW * PH + oh * SH) + (i * PH + j)) * IC + ic];
+						tiled_in[(c_idx * IC + ic) * o_size + r_idx] = I[((ow * SW * PH + oh * SH) + (i * PH + j)) * IC + ic];
 					}
 		}
 		
-	cublasSetMatrix(o_size * IC, k_size, sizeof(float), matA, o_size * IC, d_a, o_size * IC);
+	cublasSetMatrix(o_size * IC, k_size, sizeof(float), tiled_in, o_size * IC, d_a, o_size * IC);
 	cublasSetMatrix(OC * IC, k_size,  sizeof(float), W, OC * IC, d_b, OC * IC);
-	cublasSetMatrix(o_size, OC, sizeof(float), matC, o_size, d_o, o_size);
+	cublasSetMatrix(o_size, OC, sizeof(float), O_colMaj, o_size, d_o, o_size);
 
 	cublasCreate(&handle);
 	for(int i = 0; i < IC; i++)
@@ -63,18 +63,18 @@ void conv2D(int PW, int PH, int KW, int KH, int IC, int OC, int SW, int SH, int 
 				&bet,
 				d_o, o_size);
 		
-	cublasGetMatrix(o_size, OC, sizeof(float), d_o, o_size, matC, o_size);
+	cublasGetMatrix(o_size, OC, sizeof(float), d_o, o_size, O_colMaj, o_size);
 	
 	for(int i = 0; i < o_size; i++)
 		for(int j = 0; j < OC; j++)
-			O[i * OC + j] = matC[j * o_size + i];
+			O[i * OC + j] = O_colMaj[j * o_size + i];
 		
 	cudaFree(d_a);
 	cudaFree(d_b);
 	cudaFree(d_o);
 	cublasDestroy(handle);
-	free(matA);
-	free(matC);
+	free(tiled_in);
+	free(O_colMaj);
 }
 
 extern "C"
@@ -90,15 +90,14 @@ void biasAdd(int size, int OC, double *I, double *B, double *O)
 
 extern "C"
 
-void maxPool2D(int PW, int PH, int KW, int KH, int OC, int SW, int SH, int OW, int OH, double *I, double *O)
+void maxPool2D(int PW, int PH, int KW, int KH, int OC, int SW, int SH, double *I, double *O)
 {
         double max;
         int o_idx, s_idx, k_idx;
+        int OW = PW/SW, OH = PH/SH;
 
         for(int oc = 0; oc < OC; oc++)
-        {
                 for(int ow = 0; ow < OW; ow++)
-                {
                         for(int oh  = 0; oh < OH; oh++)
                         {
                                 o_idx = (ow * OH + oh) * OC + oc;
@@ -119,9 +118,8 @@ void maxPool2D(int PW, int PH, int KW, int KH, int OC, int SW, int SH, int OW, i
                                 }
                                 O[o_idx] = max;
                         }
-                }
-        }
 }
+
 
 extern "C"
 
