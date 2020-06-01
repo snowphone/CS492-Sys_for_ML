@@ -6,17 +6,17 @@ import numpy as np
 from itertools import product
 from multiprocessing import Process, sharedctypes
 from ctypes import *
-import time
 
 parallelism = 8
 mylib = cdll.LoadLibrary('./openblas.so')
+
 ptr = np.ctypeslib.ndpointer(c_double, flags="C_CONTIGUOUS")
 mylib.conv2D.argtypes = [c_int, c_int, c_int, c_int, c_int,
 			 c_int, c_int, c_int, c_int, c_int,
 			 ptr, ptr, ptr]
 mylib.biasAdd.argtypes = [c_int, c_int, ptr, ptr, ptr]
-mylib.maxPool2D.argtypes = [c_int, c_int, c_int, c_int, c_int,
-		  	    c_int, c_int, c_int, c_int, 
+mylib.maxPool2D.argtypes = [c_int, c_int, c_int, c_int,
+		  	    c_int, c_int, c_int, 
 			    ptr, ptr]
 mylib.batchNorm.argtypes = [c_int, c_int, ptr, ptr, ptr, ptr, c_double, ptr]
 mylib.leakyReLU.argtypes = [c_int, c_int, ptr, ptr]
@@ -134,7 +134,7 @@ class Conv2D(DnnNode):
 		self.in_node = in_node
 
 		# weights
-		self.weights = kernel
+		self.weights = kernel.astype(np.float64, order = "C")
 		assert len(self.weights.shape) == 4
 		if len(self.in_node.result.shape) < 3:
 			input_channels = 1
@@ -173,17 +173,12 @@ class Conv2D(DnnNode):
 		self.OW = int((self.PW - self.KW) / self.SW + 1)
 		self.OH = int((self.PH - self.KH) / self.SH + 1)
 
-		self.result = np.zeros((1, self.OW, self.OH, self.OC))
+		self.result = np.zeros((1, self.OW, self.OH, self.OC)).astype(np.float64)
 
 	def run(self, counter):
-		ptin = np.pad(self.in_node.result, self.pad, mode='constant')
-
-		ptin = ptin.astype(np.float64).flatten()
-		self.weights = self.weights.astype(np.float64).flatten()
-		self.result = self.result.astype(np.float64).flatten()
+		ptin = np.pad(self.in_node.result, self.pad, mode='constant').astype(np.float64)
 		
 		mylib.conv2D(self.PW, self.PH, self.KW, self.KH, self.IC, self.OC, self.SW, self.SH, self.OW, self.OH, ptin, self.weights, self.result)
-		self.result = self.result.reshape((1, self.OW, self.OH, self.OC))	
 		# Assumed batch = 1		
 
 class BiasAdd(DnnNode):
@@ -197,21 +192,15 @@ class BiasAdd(DnnNode):
 		self.OH = tin.shape[2]
 		self.OC = tin.shape[3]
 
-		self.biases = biases 
+		self.biases = biases.astype(np.float64)
 		assert self.biases.shape[-1] == self.OC 
 
-		self.result = self.in_node.result 
+		self.result = self.in_node.result.astype(np.float64) 
 
 	def run(self, counter):
-		tin = self.in_node.result
-		self.result = np.zeros((1, self.OW, self.OH, self.OC))
+		tin = self.in_node.result.astype(np.float64)
 
-		tin = tin.astype(np.float64).flatten()
-		tbiases = self.biases.astype(np.float64).flatten()
-		self.result = self.result.astype(np.float64).flatten()
-
-		mylib.biasAdd(self.OW * self.OH, self.OC, tin, tbiases, self.result)
-		self.result = self.result.reshape((1, self.OW, self.OH, self.OC))
+		mylib.biasAdd(self.OW * self.OH, self.OC, tin, self.biases, self.result)
 	
 class MaxPool2D(DnnNode):
 	def __init__(self, name, in_node, ksize, strides, padding):
@@ -261,18 +250,12 @@ class MaxPool2D(DnnNode):
 		ptin= np.pad(self.in_node.result, self.pad, mode='constant')
 		self.PW = ptin.shape[1]
 		self.PH = ptin.shape[2]
-		self.result = np.zeros((1, int(self.PW / self.stride[1]), int(self.PH / self.stride[2]), self.OC))
+		self.result = np.zeros((1, int(self.PW / self.stride[1]), int(self.PH / self.stride[2]), self.OC)).astype(np.float64)
 
 	def run(self, counter):
-		ptin = np.pad(self.in_node.result, self.pad, mode='constant')
-	
-		ptin = ptin.astype(np.float64).flatten()
-		self.result = self.result.astype(np.float64).flatten()
-		mpOW = int(self.PW/self.stride[1])
-		mpOH = int(self.PH/self.stride[2])
+		ptin = np.pad(self.in_node.result, self.pad, mode='constant').astype(np.float64)
 
-		mylib.maxPool2D(self.PW, self.PH, self.ksize[1], self.ksize[2], self.OC, self.stride[1], self.stride[2], mpOW, mpOH, ptin, self.result)
-		self.result = self.result.reshape((1, mpOW, mpOH, self.OC))	
+		mylib.maxPool2D(self.PW, self.PH, self.ksize[1], self.ksize[2], self.OC, self.stride[1], self.stride[2], ptin, self.result)
 	
 class BatchNorm(DnnNode):
 	def __init__(self, name, in_node, mean, variance, gamma, epsilon):
@@ -285,28 +268,20 @@ class BatchNorm(DnnNode):
 		self.OH = tin.shape[2]
 		self.OC = tin.shape[3]
 
-		self.mean = mean 
+		self.mean = mean.astype(np.float64) 
 		assert self.mean.shape[0] == self.OC
-		self.variance = variance
+		self.variance = variance.astype(np.float64)
 		assert self.variance.shape[0] == self.OC 
-		self.gamma = gamma
+		self.gamma = gamma.astype(np.float64)
 		assert self.gamma.shape[0] == self.OC
-		self.epsilon = epsilon
+		self.epsilon = np.float64(epsilon)
 		
-		self.result = self.in_node.result
+		self.result = self.in_node.result.astype(np.float64)
 
 	def run(self, counter):
-		tin = self.in_node.result
-		self.result = np.zeros((1, self.OW, self.OH, self.OC))
+		tin = self.in_node.result.astype(np.float64)
 		
-		tin = tin.astype(np.float64).flatten()
-		tmean = self.mean.astype(np.float64).flatten()
-		tgamma = self.gamma.astype(np.float64).flatten()
-		tvar = self.variance.astype(np.float64).flatten()
-		self.result = self.result.astype(np.float64).flatten()
-		
-		mylib.batchNorm(self.OW * self.OH, self.OC, tin, tmean, tgamma, tvar, np.float64(self.epsilon), self.result)
-		self.result = self.result.reshape((1, self.OW, self.OH, self.OC))
+		mylib.batchNorm(self.OW * self.OH, self.OC, tin, self.mean, self.gamma, self.variance, self.epsilon, self.result)
 		
 class LeakyReLU(DnnNode):
 	def __init__(self, name, in_node):
@@ -319,17 +294,12 @@ class LeakyReLU(DnnNode):
 		self.OH = tin.shape[2]
 		self.OC = tin.shape[3]
 
-		self.result = self.in_node.result
+		self.result = self.in_node.result.astype(np.float64)
 
 	def run(self, counter):
-		tin = self.in_node.result
-		self.result = np.zeros((1, self.OW, self.OH, self.OC))
-	
-		tin = tin.astype(np.float64).flatten()
-		self.result = self.result.astype(np.float64).flatten()		
+		tin = self.in_node.result.astype(np.float64)
 			
 		mylib.leakyReLU(self.OW * self.OH, self.OC, tin, self.result)
-		self.result = self.result.reshape((1, self.OW, self.OH, self.OC))
 		
 class Input(DnnNode):
 	def __init__(self, name, in_shape):
