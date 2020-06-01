@@ -2,7 +2,6 @@
 #include <stdlib.h>
 #include <cuda_runtime.h>
 #include <cublas_v2.h>
-#include <stddef.h>
 #include <cblas.h>
 #include <math.h>
 
