@@ -47,9 +47,6 @@ class DnnInferenceEngine(object):
 				if skip_current:
 					continue
 				current.run(counter)
-				print("layer: {}".format(current.name))
-				print(current.result[0,0,0,0])
-				print(current.result[0,1,5,2])
 				if not isinstance(current, Input):
 					if self.debug:
 						path = os.path.join("intermediate", "layer_{}.npy".format(counter))
