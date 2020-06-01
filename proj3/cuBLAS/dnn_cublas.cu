@@ -19,71 +19,51 @@ void conv2D(int PW, int PH, int KW, int KH, int IC, int OC, int SW, int SH, int 
 	// Just reuse openBLAS code that properly working but different major.
 	
 	int o_size = OW * OH, k_size = KW * KH;
-	int r_idx, c_idx, b_idx, w_idx;
-	float *matA, *matB, *matC;
+	int r_idx, c_idx;
+	float *matA, *matC;
 
 	cublasHandle_t handle;
 	float al = 1.0f, bet = 1.0f;
 	float *d_a, *d_b, *d_o;
 	
-	cudaMalloc(&d_a, (o_size * k_size) * sizeof(float));
-	cudaMalloc(&d_b, (k_size * OC) * sizeof(float));
+	cudaMalloc(&d_a, (o_size * k_size * IC) * sizeof(float));
+	cudaMalloc(&d_b, (OC * IC * k_size) * sizeof(float));
 	cudaMalloc(&d_o, (o_size * OC) * sizeof(float));
 
-	matA = (float *)malloc((o_size * k_size) * sizeof(float));
-	matB = (float *)malloc((k_size * OC) * sizeof(float));
-	matC = (float *)malloc((o_size * OC) * sizeof(float));
+	matA = (float *)malloc((o_size * k_size * IC) * sizeof(float));
+	matC = (float *)malloc((o_size * OC * IC) * sizeof(float));
 
 	for(int i = 0; i < o_size * OC; i++)
 		matC[i] = 0;	
-
-	for(int ic = 0; ic < IC; ic++)
-	{
-		for(int ow = 0; ow < OW; ow++)
-		{
-			for(int oh  = 0; oh < OH; oh++)
-			{
-				r_idx = ow * OH + oh;
-				for(int i = 0; i < KW; i++)
-				{
-					for(int j = 0; j < KH; j++)
-					{
-						c_idx = i * KH + j;
-						matA[c_idx * o_size + r_idx] = I[((ow * SW * PH + oh * SH) + (i * PH + j)) * IC + ic];
-					}
-				}
-			}
-		}
 	
-		for(int i = 0; i < KW; i++)
+	for(int ow = 0; ow < OW; ow++)
+		for(int oh  = 0; oh < OH; oh++)
 		{
-			for(int j = 0; j < KH; j++)
-			{		
-				b_idx = i * KH + j;
-				for(int oc = 0; oc < OC; oc++)
-				{
-					w_idx = (b_idx * (IC * OC)) + ic * OC + oc;
-					matB[oc * k_size + b_idx] = W[w_idx];
-				}
-			}
+			r_idx = ow * OH + oh;
+			for(int ic = 0; ic < IC ; ic++)
+				for(int i = 0; i < KW; i++)
+					for(int j = 0; j < KH; j++)
+					{	
+						c_idx = i * KH + j;
+						matA[(c_idx * IC + ic) * o_size + r_idx] = I[((ow * SW * PH + oh * SH) + (i * PH + j)) * IC + ic];
+					}
 		}
-			
-		cublasSetMatrix(o_size, k_size, sizeof(float), matA, o_size, d_a, o_size);
-		cublasSetMatrix(k_size, OC,  sizeof(float), matB, k_size, d_b, k_size);
-		cublasSetMatrix(o_size, OC, sizeof(float), matC, o_size, d_o, o_size);
+		
+	cublasSetMatrix(o_size * IC, k_size, sizeof(float), matA, o_size * IC, d_a, o_size * IC);
+	cublasSetMatrix(OC * IC, k_size,  sizeof(float), W, OC * IC, d_b, OC * IC);
+	cublasSetMatrix(o_size, OC, sizeof(float), matC, o_size, d_o, o_size);
 
-		cublasCreate(&handle);
-
-		cublasSgemm(handle, CUBLAS_OP_N, CUBLAS_OP_N,
+	cublasCreate(&handle);
+	for(int i = 0; i < IC; i++)
+		cublasSgemm(handle, CUBLAS_OP_N, CUBLAS_OP_T,
 				o_size, OC, k_size,
 				&al,
-				d_a, o_size,
-				d_b, k_size,
+				d_a + i * o_size, o_size * IC,
+				d_b + i * OC, OC * IC,
 				&bet,
 				d_o, o_size);
 		
-		cublasGetMatrix(o_size, OC, sizeof(float), d_o, o_size, matC, o_size);
-		}
+	cublasGetMatrix(o_size, OC, sizeof(float), d_o, o_size, matC, o_size);
 	
 	for(int i = 0; i < o_size; i++)
 		for(int j = 0; j < OC; j++)
@@ -94,7 +74,6 @@ void conv2D(int PW, int PH, int KW, int KH, int IC, int OC, int SW, int SH, int 
 	cudaFree(d_o);
 	cublasDestroy(handle);
 	free(matA);
-	free(matB);
 	free(matC);
 }
 
