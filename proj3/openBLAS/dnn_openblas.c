@@ -14,7 +14,7 @@ void conv2D(int PW, int PH, int KW, int KH, int IC, int OC, int SW, int SH, int 
 	// In the matrix multiplication, we set beta value as 1, so the dgemm does C = A x B + C, so accumulation is naturally done during matrix multiplication.
 
 	int o_size = OW * OH, k_size = KW * KH;
-	int r_idx, c_idx, b_idx, w_idx;
+	int r_idx, c_idx;
 	double *tiled_in;	
 
         tiled_in = (double *)malloc((o_size * k_size * IC) * sizeof(double));
