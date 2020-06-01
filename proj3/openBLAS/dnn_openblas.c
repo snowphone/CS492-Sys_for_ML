@@ -113,7 +113,7 @@ void batchNorm(int size, int OC, double *I, double *mean, double *gamma, double 
 	for(int i = 0; i < size; i++)
 		for(int oc = 0; oc < OC; oc++)
 		{	
-			O[i * OC + oc] = (I[i * OC + oc] - mean[oc]) * gamma[oc] / sqrt(variance[oc] = epsilon);	
+			O[i * OC + oc] = (I[i * OC + oc] - mean[oc]) * gamma[oc] / sqrt(variance[oc] + epsilon);	
 		}
 }
 
