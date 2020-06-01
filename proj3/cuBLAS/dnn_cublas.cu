@@ -12,7 +12,7 @@ void conv2D(int PW, int PH, int KW, int KH, int IC, int OC, int SW, int SH, int 
 	// cuBLAS implementation of 2D convolution
 	// cuBLAS's Sgemm is executed based on that the matrix are ordered in Column Major.
 	// Since tiled_in, weight and output are stored in RowMajor order, their transpose is ColMajor order.
-	// Therefore, for the RowMajor order, we transposed the equation A X B = C  ->  B^T X A^T = C^T.
+	// Therefore, for the RowMajor order, we transposed the equation C = A X B  ->  C^T = B^T X A^T.
 	// Then the only change from openBLAS are 1. switching tiled_in and weight 2. Memory copy between host and GPU
 	
 	int o_size = OW * OH, k_size = KW * KH;
@@ -20,7 +20,7 @@ void conv2D(int PW, int PH, int KW, int KH, int IC, int OC, int SW, int SH, int 
 	float *tiled_in;
 
 	cublasHandle_t handle;
-	float al = 1.0f, bet = 1.0f;
+	float al = 1.0f, bet = 0.0f;
 	float *d_tiled_in, *d_w, *d_o;
 	
 	cudaMalloc(&d_tiled_in, (k_size * IC * o_size) * sizeof(float));
@@ -33,28 +33,27 @@ void conv2D(int PW, int PH, int KW, int KH, int IC, int OC, int SW, int SH, int 
 		for(int oh  = 0; oh < OH; oh++)
 		{
 			r_idx = ow * OH + oh;
-			for(int ic = 0; ic < IC ; ic++)
-				for(int i = 0; i < KW; i++)
-					for(int j = 0; j < KH; j++)
-					{	
-						c_idx = i * KH + j;
-						tiled_in[(r_idx * IC + ic) * k_size + c_idx] = I[((ow * SW * PH + oh * SH) + (i * PH + j)) * IC + ic];
-					}
+			for(int i = 0; i < KW ; i++)
+				for(int j = 0; j < KH; j++)
+				{	
+					c_idx = i * KH + j;
+					for(int ic = 0; ic< IC; ic++)
+						tiled_in[(r_idx * k_size + c_idx) * IC + ic] = I[((ow * SW * PH + oh * SH) + (i * PH + j)) * IC + ic];
+				}
 		}
 		
 	cublasSetMatrix(k_size * IC, o_size, sizeof(float), tiled_in, k_size * IC, d_tiled_in, k_size * IC);
-	cublasSetMatrix(OC * IC, k_size,  sizeof(float), W, OC * IC, d_w, OC * IC);
+	cublasSetMatrix(OC, k_size * IC,  sizeof(float), W, OC, d_w, OC);
 	cublasSetMatrix(OC, o_size, sizeof(float), O, OC, d_o, OC);
 
 	cublasCreate(&handle);
-	for(int i = 0; i < IC; i++)
-		cublasSgemm(handle, CUBLAS_OP_N, CUBLAS_OP_N,
-				OC, o_size, k_size,
-				&al,
-				d_w + i * OC, OC * IC,
-				d_tiled_in + i * k_size, k_size * IC,
-				&bet,
-				d_o, OC);
+	cublasSgemm(handle, CUBLAS_OP_N, CUBLAS_OP_N,
+			OC, o_size, k_size * IC,
+			&al,
+			d_w, OC,
+			d_tiled_in, k_size * IC,
+			&bet,
+			d_o, OC);
 	
 	cublasGetMatrix(OC, o_size, sizeof(float), d_o, OC, O, OC);
 	
