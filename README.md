@@ -3,6 +3,11 @@
 ## Status
 
 - [ ] AVX
-- [ ] OpenBLAS
+  - [x] leakyReLU
+  - [x] batch normalization
+  - [ ] bias
+  - [ ] max pool
+  - [ ] conv2d
+- [x] OpenBLAS
 - [ ] CUDA
 - [ ] cuBLAS
