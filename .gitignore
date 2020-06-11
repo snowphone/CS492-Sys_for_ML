@@ -5,10 +5,14 @@ __pycache__/
 
 # C extensions
 **/*.so
+*.o
+**/compile_commands.json
+**/.clangd/
 
 # Project specific files
 **/*.jpg
 **/intermediate/
+output_tensor.bin
 
 
 # Distribution / packaging
@@ -138,3 +142,24 @@ dmypy.json
 **/*.aux
 **/*-eps-converted-to.pdf
 **/*.log
+
+# LaTeX temporary files
+*.aux
+*.log
+*.toc
+
+# Latexmk
+*.fdb_latexmk
+
+# SyncTeX
+*.synctex.gz
+
+# LaTeX Beamer
+*.snm
+*.vrb
+*.nav
+*.out
+
+# BibTeX
+*.bbl
+*.blg

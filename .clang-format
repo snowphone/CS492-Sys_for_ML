@@ -3,7 +3,6 @@ Language: Cpp
 AccessModifierOffset: -4
 AlignConsecutiveAssignments: true
 AlignConsecutiveDeclarations: true
-AlignConsecutiveMacros: true
 AlignTrailingComments: true
 BinPackParameters: false
 BreakBeforeTernaryOperators: false

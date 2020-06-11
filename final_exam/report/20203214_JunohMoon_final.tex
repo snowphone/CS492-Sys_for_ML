@@ -1,0 +1,293 @@
+\documentclass[a4paper,12pt]{article} 
+\usepackage{kotex} 
+\usepackage[figuresright]{rotating} 
+\usepackage{fancyhdr}
+\usepackage{indentfirst}
+\usepackage{relsize}
+\usepackage{miama}
+\usepackage[T1]{fontenc}
+\usepackage[inline]{enumitem}
+\usepackage{multicol}
+\usepackage{amsmath}	% \text
+\usepackage{amssymb}
+
+\usepackage{booktabs}
+\usepackage{multirow}
+
+\usepackage[numbers,sort]{natbib}
+
+\usepackage[font=small]{caption}
+
+\usepackage{fontspec}
+\setmainfont{Times New Roman}
+
+\usepackage{hyperref} 	% To make tableofcontents hyperlinkable
+\hypersetup{
+    colorlinks=true,
+	linktoc=all,
+	linkcolor=black
+}
+
+\newcommand{\etal}{\textit{et al}. }
+\newcommand{\ie}{\textit{i}.\textit{e}.}
+\newcommand{\eg}{\textit{e}.\textit{g}.}
+
+
+\usepackage{listingsutf8}		%  Listing with UTF-8!
+\usepackage[dvipsnames]{xcolor}
+
+\lstset{
+	language         = C,
+	basicstyle       = \ttfamily\relsize{-1},
+    keywordstyle     = \color{blue},%\bfseries,
+    identifierstyle  = \bfseries,
+    commentstyle     = \color{olive},
+    moredelim        = [s][\color{ForestGreen}]{/**}{*/},	% For doxygen-style comments
+    stringstyle      = \color{magenta},
+    frame            = lines,
+    showstringspaces = false,
+    columns          = flexible,
+	breaklines		 = true,
+	tabsize          = 4,
+	numbers          = left,
+	numbersep        = 4pt,
+	numberstyle      = \tiny\color{gray},
+	mathescape       = true
+}
+
+\usepackage{environ}
+\NewEnviron{answer}{% Prologue
+	\vspace{0.3em}\\ {\relsize{-1}\textbf{Answer:} \BODY{}
+
+	}%
+}
+
+%\pagestyle{fancy}
+%\lhead{}
+%\rhead{}
+
+\begin{document}
+%1페이지
+\title{CS492: Systems for Machine Learning\\\large Final Project}
+\author{Junoh Moon\\\\Korea Advanced Institute of Science and Technology}
+\date{\today}
+
+%1페이지 로고
+\begin{figure}[!b]
+	\centering
+	\includegraphics[width=0.7\textwidth]{./kaist_emblem2.eps}
+\end{figure}
+
+\maketitle
+\thispagestyle{empty} %Ignore page number of first page
+\newpage
+%page 2
+
+\begin{enumerate}
+		\item Develop Convolutional layer in C/C++ and measure the elapsed time exclusively for running the convolution operations.
+			\begin{answer}
+
+				\begin{table}[h]
+					\centering
+					\resizebox{0.55\textwidth}{!}{%
+						\begin{tabular}{@{}lcccc@{}}
+							\toprule
+							\multirow{2}{*}{} & \multicolumn{4}{c}{\textbf{testcase (group 1)}} \\ \cmidrule(l){2-5} 
+							& \textbf{1} & \textbf{2} & \textbf{3} & \textbf{average} \\ \midrule
+							\textbf{elapsed time (ms)} & 24.010000 & 23.59800 & 9.548000 & 19.052000 \\ \bottomrule
+						\end{tabular}%
+						}
+						\caption{Experiment results of problem 1.}%
+						\label{tab:proj1}
+				\end{table}
+			\end{answer}
+
+		\item Quantize the operands in a lower precision and analyze the performance-accuracy tradeoff
+			\begin{answer}
+				% 꼭 넣어야 할 내용: 
+				% * 표
+				% * S 를 어떠한 방식으로 골랐는가
+				% * Precision 분석
+				% * 이때의 conv 시간 및 quantization overhead
+				Since the scale $S$ in 
+					$\mathbb{Q} = S \times \mathbb{R}$
+				, where $\mathbb{Q}$ represents the quantized integer and $\mathbb{R}$ represents the real number, played a key-role in minimizing information loss during quantization --- narrowing the numeric range --- , it was required to pick a proper $S$. 
+				Considering the importance of the problem, the $S$ was set dynamically for given data rather than hand-picked.
+				At first, it was designed to share $S$ between an input and a kernel.
+				However, as shown in Figure~\ref{fig:histogram}, the distribution problem arose.
+				\begin{figure}[htbp]
+					\centering
+					\includegraphics[width=0.32\textwidth]{1_input}
+					\includegraphics[width=0.32\textwidth]{1_kernel}
+					\includegraphics[width=0.32\textwidth]{1_combine}
+					\caption{Plotted histograms. Each histogram represents input, kernel, and input+kernel respectively from the left. The data came from the first testcase of group 1.}%
+					\label{fig:histogram}
+				\end{figure}
+
+				Although both of input and kernel was distributed as \emph{bell-curve}, variances differed; 
+				while most values of the input were in $[-0.15,0.15]$, those of the kernel were in $[-30, 30]$.
+				Thus, if we naively use only one $S$, then the $S$ would scale the values in the right figure in Figure~\ref{fig:histogram}.
+				This would result in overflow input values or underflow kernel values into 0.
+				This tendency was observed in every testcase.
+
+				To solve the overflow/underflow problem in quantization, the input and kernel had each $S$ respectively as $S_{input}$ and $S_{kernel}$.
+				Now then $S$ was defined as follows to fully utilize the given integer range:
+				\begin{equation}\label{eq:scale}
+					S = \frac{q_{max} - (-q_{max})}{r_{max}- r_{min}}
+				\end{equation}
+				where $r_{min}$ and $r_{max}$ represent the smallest and the biggest number in the input or kernel, $q_{max}$ represents the biggest number of the type for quantization.
+
+				Given $S_{input}$ and $S_{kernel}$, result $r_{result}$ was calculated as below.
+				\begin{equation}
+					\begin{split}
+						r_{result} & = r_{input} \times r_{kernel} \\ 
+								& \approxeq \frac{q_{input}}{S_{input}} \times \frac{q_{kernel}}{S_{kernel}} \\
+								& \approxeq  \frac{1}{S_{input}S_{kernel}} q_{input} q_{kernel} \\
+								& \approxeq \frac{1}{S_{input}S_{kernel}} q_{result}
+					\end{split}
+				\end{equation}
+
+				By Equation~\ref{eq:scale}, real numbers are uniformly mapped into quantized numbers. 
+				This approach offered us a small overhead with fair results \cite{jacob2018quantization}.
+				Thus, real numbers could be minimized to integers without meaningful accuracy loss.
+
+				The problem was, however, Convolutional Layer consists of MAC operations, and hence the result of MAC operations would be overflowed after calculation.
+				For example, when given $n$-bit integers, $k \times k$ kernel, and the number of the input channels, $c$, then 
+				the accumulator should be at least \begin{equation}\label{eq:bits} 2n + log_2{(c \cdot k^2)} \end{equation} bits to avoid overflow.
+				One of the simple ideas to solve this problem is making a accumulator type large.
+				Consequently, the result of 8-bit convolutional layer was set to 32-bit, that of 16-bit was set to 64-bit, and that of 32-bit was set to 64-bit. 
+				32-bit inputs and kernels were mapped into 64-bit accumulators (2$\times$ precision) unlike others (4 $\times$ precision) because the runtime environment did not support 128-bit integer.
+
+				\begin{table}[htbp]
+					\flushright{}
+					\resizebox{0.92\textwidth}{!}{%
+						\begin{tabular}{@{}rrrrrrr@{}}
+							\toprule
+							\multicolumn{1}{c}{\textbf{bit length}} & \multicolumn{1}{c}{\textbf{input scale}} & \multicolumn{1}{c}{\textbf{kernel scale}} & \multicolumn{1}{c}{\textbf{conv2d}} & \multicolumn{1}{c}{\textbf{dequantization}} & \multicolumn{1}{c}{\textbf{quantization}} & \multicolumn{1}{c}{\textbf{NRMSE}} \\ \midrule
+							8→32 & 3.982 & 436.630 & 18.545ms & 0.362ms & 2.801ms & 0.95\% \\
+							16→64 & 1,019.353 & 111,777.267 & 35.977ms & 0.452ms & 2.431ms & 0.90\% \\
+							32→64 & 66,804,233.333 & 7,325,443,333.333 & 40.495ms & 0.256ms & 2.397ms & 9.56\% \\ \bottomrule
+						\end{tabular}%
+					}
+					\caption{Averaged experiment results of problem 2.}%
+					\label{tab:prob2}
+					\endflushright{}
+				\end{table}
+
+				As shown in Table~\ref{tab:prob2}, the results in 8-bit and 16-bit showed outstanding performances. 
+				Both of them showed less than 1\% errors.
+				In contrast, 32-bit integer quantization showed relatively poor performance.
+				One of the reasons may be due to relatively small accumulator bit-length.
+				The overall quantization overhead was neglectable. In every case, the portion of the overhead was less than 15\%, and thus calculating convolutional layer still took a dominent portion.
+
+				From a point of view of throughput, small bit-length integer had a tendency to return the results faster, but not significantly faster than floating points.
+				One possible explanation is the code was fully optimized by the compiler, and hence the calculation is pipelined.
+				In the given environment (Intel Skylake Xeon 4-core processors, GCC 5.4.0), O3 optimization implicitly vectorized codes into SSE instructions.
+				Therefore, the gap between floats and integers might be reduced.
+
+			\end{answer}
+
+
+		\item CPU vectorization with lower precision % 800 word limit
+			\begin{answer}
+				In this experiment, the given codes were accelerated by explicit AVX2 intrinsics and a \emph{pthread} library.
+				The input matrices were divided into sub-matrices that correspond to one element in the result matrix, and thus multiple elements in the result matrix were calculated in parallel.
+				Moreover, the multiplication function was parallelized with AVX2 intrinsics, so $n$ elements ($n$ depends on the numeric type) could be calculated simultaneously.
+
+				\begin{table}[!h]
+					\flushright{}
+					\resizebox{0.92\textwidth}{!}{%
+						\begin{tabular}{@{}crrrrrr@{}}
+							\toprule
+							\multicolumn{1}{c}{\textbf{numeric type}} & \multicolumn{1}{c}{\textbf{input scale}} & \multicolumn{1}{c}{\textbf{kernel scale}} & \multicolumn{1}{c}{\textbf{conv2d}} & \multicolumn{1}{c}{\textbf{dequantization}} & \multicolumn{1}{c}{\textbf{quantization}} & \multicolumn{1}{c}{\textbf{NRMSE}} \\ \midrule
+							INT16 & 1,019.35 & 111,777.27 & 24.488ms & 0.135ms & 2.192ms & 9.56\% \\
+							INT32 & 66,804,233.33 & 7,325,443,333.33 & 18.864ms & 0.133ms & 2.236ms & 9.56\% \\
+							FP32 & 66,804,233.33 & 7,325,443,333.33 & 18.394ms & 0.144ms & 2.356ms & 0.00\% \\ \bottomrule
+						\end{tabular}%
+					}
+					\caption{Experiment results using AVX2 and pthread.}%
+					\label{tab:prob3}
+					\endflushright{}
+				\end{table}
+
+				From a point of view of precision, the errors of all integers was 9.56\% (Table~\ref{tab:prob3}). This result was same as the 32-bit experiment in the second problem (Table~\ref{tab:prob2}).
+				Thus, it is supposed that these high error rates were due to the overflow problem since the intrinsics API did not support high precision accumulator types, so an accumulator type was fixed to the source type.
+
+				On the other hand, the elapsed time reduced compared to the previous code, especailly in integers. (Table~\ref{tab:prob2}).
+				For integers, the time was reduced to 1.47$\times$ and 2.15$\times$ respectively.
+				But, not a significant improvement occured in floating points (1.04$\times$).
+				These results implied that floating points were implicitly vectorized in O3 flag, but not in integer vice-versa.
+
+			\end{answer}
+
+		\item GPU vectorization
+			\begin{answer}
+
+				\begin{table}[h]
+					\centering
+					\resizebox{0.55\textwidth}{!}{%
+						\begin{tabular}{@{}lcccc@{}}
+							\toprule
+							\multirow{2}{*}{} & \multicolumn{4}{c}{\textbf{testcase (group 1)}} \\ \cmidrule(l){2-5} 
+							& \textbf{1} & \textbf{2} & \textbf{3} & \textbf{average} \\ \midrule
+							\textbf{elapsed time} & 0.03749ms & 0.03574ms & 0.03562ms & 0.03628ms \\ \bottomrule
+						\end{tabular}%
+					}
+					\caption{Experiment results of problem 4}%
+					\label{tab:proj4}
+				\end{table}
+			\end{answer}
+
+		\item Performance-Accuracy Tradeoff Analysis and Discussion
+			% performance speedup & accuracy loss plot!
+			% tradeoff 분석
+			\begin{answer}
+
+				In this section, we collected four experiments --- executing conv2d functions, measuring the elapsed time, and calculating the error if required --- and plotted into two graphs (Figure~\ref{fig:plot}).
+				The left graph showed the elapsed time during invoking \lstinline{conv2d} function. 
+				The result showed that manually parallelized experiments (AVXInt16, AVXInt32, AVXFloat) were as fast as the baseline (problem 1). 
+				Integer types, however, did not satisfy our expectation. 
+				One assumption is, as described in the previous section, floating points were already vectorized (SSE instructions) to exploit ILP by a compiler, while integers were not.
+
+				In contrast, the GPU offered 525$\times$ remarkable speedup over the baseline.
+				Due to SIMD-like architecture and hundreds of execution-units, it overpowered CPUs.
+				However, GPUs are coprocessors of a CPU, and thus the data must be copied to the device memory. In this discussion, copying overhead (170 ms) took the dominent portion in the program. 
+				Thus, this implies that GPU memory management is the key factor for showing the performance without interference.
+
+				In the perspective of precision, quantized low-precision bit-widths (Int8, Int16) showed less than 1.0\% accuracy loss.
+				On the other hand, Int32, AVXInt16, and AVXInt32 showed a relatively poor performance.
+				The point was they had two common things.
+				First, due to the lack of language-level and library-level supports, an overflow countermeasure could not be provided to them.
+				%Hence, int32 used int64 array types for accumulating, AVXInt16 used those of int16, and AVXInt32 used those of int32.
+				Whereas more then double-bit-length was required for fully avoiding the overflow (Equation~\ref{eq:bits}), only under 2$\times$ bit-length types were provided to them. 
+				Thus, the first point implied that enough bits for acculation is mandatory to keep the accuracy.
+
+				Second, the error rate of AVXInt16 was equal to that of AVXInt32 and that of Int32. 
+				This implied that limited ranges could be overcome by setting a scaling factor dynamically to fully utilize a quantized type, but as already mentioned, keeping quantized values correctly is more important.
+
+				To sum up, adding hardware-level resources gave us the remarkable improvement.
+				However, if the device is fixed, a proper quantization technique would show a reasonable performance without losing accuracy;  
+				this technique required a dynamic scaling to fully mapping the input into whole range of the quantized type for keeping the information as much as possible and a large-sized accumulator not to lose information.
+				Consequently, we could reach the optimal point in the tradeoff by quantizing to 8-bit (Equation~\ref{eq:scale}) and using 32-bit accumulator to avoid overflow.
+
+
+				\begin{figure}[t]
+					\centering
+					\includegraphics[width=0.58\textwidth]{CS492_final_project_plot}
+					\includegraphics[width=0.41\textwidth]{CS492_final_project_NRMSE}
+					\caption{Speedup over Problem 1 and its corresponding NRMSE graphs. Types with asterisk (*) mean their accumulator bit-widths are not wide enough to avoid overflow}%
+					\label{fig:plot}
+				\end{figure}
+				
+
+				
+				
+			\end{answer}
+
+	\end{enumerate}
+
+	\bibliographystyle{IEEEtranN}
+	\bibliography{ref.bib}
+
+	\end{document}
+
